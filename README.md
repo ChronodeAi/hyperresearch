@@ -16,7 +16,7 @@
 
 ---
 
-**Hyperresearch turns Claude Code into a deep research agent: one that currently leads the DeepResearch-Bench RACE leaderboard (benchmarked internally). It runs in OpenAI Codex too.** A tier-adaptive 16-step pipeline takes one prompt and produces an adversarially-audited report with full source provenance. Every source it reads lands in a persistent, searchable vault, so each session starts smarter than the last.
+**Hyperresearch turns Claude Code into a deep research agent. It runs in OpenAI Codex too.** A tier-adaptive 16-step pipeline takes one prompt and produces an adversarially-audited report with full source provenance. Every source it reads lands in a persistent, searchable vault, so each session starts smarter than the last.
 
 **Don't want to run it locally?** [Hyperresearch](https://hyperresearch.ai/?utm_source=github&utm_medium=readme) is the hosted version: the same pipeline, with no Claude Code or Codex install needed.
 
@@ -30,11 +30,15 @@
 >
 > Codex support ships in the next PyPI release; until then install from GitHub with `pip install git+https://github.com/jordan-gibbs/hyperresearch`. Details and what differs on Codex: [Codex](#codex).
 
-<p align="center">
-  <img src="assets/benchmark.png" alt="DeepResearch-Bench top-5 hyperresearch leads the chart ahead of Grep Deep Research, Cellcog Max, nvidia-aiq, Gemini Deep Research, and OpenAI Deep Research" width="780">
-</p>
+## See a sample report
 
-<p align="center"><sub>Forward-looking projection from a stratified pilot against the DeepResearch-Bench leaderboard snapshot (https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard). Third party validation is pending.</sub></p>
+Read a full report before you install anything. These are unedited Deep runs from the hosted version, and you don't need to log in:
+
+- [Toast vs Square vs Clover](https://hyperresearch.ai/samples/restaurant-pos-competitor-analysis?utm_source=github&utm_medium=readme): a restaurant POS competitor analysis, built mostly from SEC filings (241 sources)
+- [Buying a $2M HVAC business](https://hyperresearch.ai/samples/buying-an-hvac-business?utm_source=github&utm_medium=readme): multiples, SBA loans and diligence (213 sources)
+- [Who is winning AI coding agents, October 2026](https://hyperresearch.ai/samples/ai-coding-agents?utm_source=github&utm_medium=readme) (259 sources)
+
+On DRACO, the hosted Deep scored 77.7 across 10 tasks, against 73.0 for Claude Research (Opus). Method and per-task scores are on the [benchmark page](https://hyperresearch.ai/benchmarks/draco?utm_source=github&utm_medium=readme).
 
 ## Why it wins
 
@@ -445,7 +449,7 @@ Publishers block their own open-access PDFs often enough that one attempt isn't 
 
 - It doesn't replace your judgment on which sources matter. The agent picks, you steer.
 - It can't fetch what's behind a paywall you haven't logged into. Open-access recovery finds a legal free copy when one exists — even when the publisher blocks the fetch outright — but when none exists you get the abstract, or nothing, and the note says so.
-- On Claude Code it runs on Anthropic models via the subagent roster (per-agent assignments come from the profile's model map). On Codex, subagents use the session's model unless a Codex override is configured. Usage scales with tier, gear, and corpus size. The Codex port is new and has not been benchmarked yet; the Claude Code pipeline is the one the leaderboard numbers come from.
+- On Claude Code it runs on Anthropic models via the subagent roster (per-agent assignments come from the profile's model map). On Codex, subagents use the session's model unless a Codex override is configured. Usage scales with tier, gear, and corpus size. The Codex port is new and has not been benchmarked yet; the Claude Code pipeline is the one that has been benchmarked.
 - The lint gate catches **structural** failures (missing scaffold, broken provenance, unresolved CRITICALs). It cannot guarantee factual accuracy, that's still your call.
 
 ---
