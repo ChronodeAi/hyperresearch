@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import tomllib
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import pytest
 
@@ -364,14 +365,20 @@ def test_stop_hook_never_lands_in_user_codex_config(tmp_path, monkeypatch, via):
     """A vault at the home directory must not turn the Stop gate into a user-level hook."""
     from hyperresearch.core.hooks import _install_codex_stop_hook
 
+    def set_home(path):
+        # Path.home() reads HOME on POSIX and USERPROFILE on Windows.
+        monkeypatch.setenv("HOME", str(path))
+        monkeypatch.setenv("USERPROFILE", str(path))
+
     home = tmp_path / "home"
     home.mkdir()
     if via == "CODEX_HOME":
         monkeypatch.setenv("CODEX_HOME", str(home / ".codex"))
-        monkeypatch.setenv("HOME", str(tmp_path / "elsewhere"))
+        set_home(tmp_path / "elsewhere")
     else:
         monkeypatch.delenv("CODEX_HOME", raising=False)
-        monkeypatch.setenv("HOME", str(home))
+        set_home(home)
+    assert Path.home() == (tmp_path / "elsewhere" if via == "CODEX_HOME" else home)
 
     result = _install_codex_stop_hook(home, "hyperresearch")
 
