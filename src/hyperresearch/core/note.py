@@ -7,13 +7,17 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 
-from hyperresearch.core.frontmatter import parse_frontmatter, render_note
+from hyperresearch.core.frontmatter import (
+    is_frontmatterless_report,
+    parse_frontmatter,
+    render_note,
+)
 from hyperresearch.core.patterns import (
     WIKI_LINK_RE,
     is_valid_wiki_link_target,
     strip_code,
 )
-from hyperresearch.models.note import Note, NoteMeta, slugify
+from hyperresearch.models.note import Note, NoteMeta, NoteStatus, NoteType, slugify
 
 # Summary prefix that marks a resolver-minted stub (`repair --stub`,
 # `graph stub`). Both minting sites write `summary="Stub for [[<id>]]"` and
@@ -31,17 +35,69 @@ def stub_summary(note_id: str) -> str:
     return f"{STUB_SUMMARY_PREFIX}{note_id}]]"
 
 
+# The pipeline's deliverable, research/notes/final_report_<vault_tag>.md,
+# carries no YAML header by design (see core/frontmatter.py). It is still the
+# vault's most valuable note, so read_note() derives what a header would have
+# carried; without that, sync's scratch-file skip left every report on disk yet
+# invisible to search, note show, status and the note-level lint rules.
+FINAL_REPORT_TAG = "final-report"
+# ATX heading. The optional closing `#` run must follow whitespace (CommonMark),
+# so `# C#` titles as `C#`. read_note() decodes the bytes as they are, so a
+# report saved with CRLF endings keeps its `\r` before the newline.
+_FIRST_HEADING_RE = re.compile(r"^#{1,6}[ \t]+(.+?)(?:[ \t]+#+)?[ \t]*\r?$", re.MULTILINE)
+
+
+def derive_report_meta(file_path: Path, body: str) -> NoteMeta:
+    """Metadata for a header-less final report, from the file alone.
+
+    id from the stem (a fixed point of slugify, which keeps underscores), title
+    from the first heading outside code (the stem when there is none), summary
+    from the first prose line via the same auto_summary the enrich step uses.
+    Both timestamps are the file's mtime: `updated` on every sync, `created`
+    at first indexing, which the sync upsert keeps on later passes so the
+    polish and cite-check edits of the deliverable do not move it.
+    """
+    from hyperresearch.core.enrich import auto_summary
+
+    m = _FIRST_HEADING_RE.search(strip_code(body))
+    title = m.group(1).strip() if m else file_path.stem
+    try:
+        mtime = datetime.fromtimestamp(file_path.stat().st_mtime, tz=UTC)
+    except OSError:
+        mtime = datetime.now(UTC)
+    return NoteMeta(
+        title=title,
+        id=slugify(file_path.stem),
+        tags=[FINAL_REPORT_TAG],
+        status=NoteStatus.REVIEW,
+        type=NoteType.NOTE,
+        created=mtime,
+        updated=mtime,
+        summary=auto_summary(body),
+    )
+
+
 def read_note(file_path: Path, vault_root: Path) -> Note:
     """Read a markdown file and parse into a Note."""
     raw_bytes = file_path.read_bytes()
     content_hash = hashlib.sha256(raw_bytes).hexdigest()
     content = raw_bytes.decode("utf-8-sig")  # Handles BOM
     meta, body = parse_frontmatter(content)
+    # parse_frontmatter hands the whole content back as the body when it found
+    # no frontmatter it could parse; a file that opens with a delimiter all the
+    # same has one, broken or half-written. A file without one is not broken.
+    frontmatter_broken = body == content and re.match(r"---[ \t]*\r?\n", content) is not None
+
+    # The header-less deliverable: derive what a header would have carried.
+    meta_derived = is_frontmatterless_report(file_path)
+    if meta_derived:
+        meta = derive_report_meta(file_path, body)
 
     rel_path = file_path.relative_to(vault_root).as_posix()
 
     # Derive ID from filename if not set in frontmatter
-    if not meta.id:
+    id_declared = bool(meta.id)
+    if not id_declared:
         meta.id = slugify(file_path.stem)
 
     # Extract outgoing wiki links, filtering citation footnotes and URLs
@@ -58,9 +114,12 @@ def read_note(file_path: Path, vault_root: Path) -> Note:
         meta=meta,
         body=body,
         path=rel_path,
+        frontmatter_broken=frontmatter_broken,
+        id_declared=id_declared,
         content_hash=content_hash,
         word_count=word_count,
         outgoing_links=outgoing,
+        meta_derived=meta_derived,
     )
 
 
@@ -116,6 +175,34 @@ def _reuse_evidence_note(notes_dir: Path, meta: NoteMeta) -> Path | None:
     return None
 
 
+def indexed_note_ids(conn) -> set[str]:
+    """Every id the notes table holds, for ``write_note(taken_ids=...)``."""
+    return {row["id"] for row in conn.execute("SELECT id FROM notes")}
+
+
+def create_note_file(file_path: Path, content: str) -> bool:
+    """Write ``content`` to a new file at ``file_path``; False if one is there.
+
+    Exclusive create (O_CREAT|O_EXCL), not an exists() check and a write:
+    parallel writers (fetcher waves, two MCP servers, `note new`) that pick
+    the same free name would all write it, and the last one silently replaces
+    the others while every caller reports its own note. A write that fails
+    after the create removes the file, which is ours: left partial, it would
+    hold the name, and the next writer would move to another.
+    """
+    try:
+        f = file_path.open("x", encoding="utf-8")
+    except FileExistsError:
+        return False
+    try:
+        with f:
+            f.write(content)
+    except BaseException:
+        file_path.unlink(missing_ok=True)
+        raise
+    return True
+
+
 def write_note(
     notes_dir: Path,
     title: str,
@@ -131,6 +218,7 @@ def write_note(
     tier: str | None = None,
     content_type: str | None = None,
     extra_frontmatter: dict | None = None,
+    taken_ids: set[str] | None = None,
 ) -> Path:
     """Create a new note file on disk. Returns the file path.
 
@@ -139,6 +227,11 @@ def write_note(
         tier: Epistemic role — ground_truth|institutional|practitioner|commentary|unknown.
         content_type: Artifact kind — paper|docs|article|blog|forum|dataset|policy|code|book|transcript|review|unknown.
         extra_frontmatter: Additional fields to set on NoteMeta (e.g. source_domain, fetched_at).
+        taken_ids: Ids to skip even when no file of that name exists, such as
+            the ids already in the notes table. A note keeps its id when its
+            file is renamed (`note mv`), so `<id>.md` can be free on disk while
+            the id is not; a note written there is refused by sync as an id
+            collision.
     """
     # The id must be a fixed point of the slugifier. NoteMeta.ensure_slug
     # already slugifies the FRONTMATTER id, so an unslugified note_id here
@@ -183,19 +276,18 @@ def write_note(
 
     file_path = target_dir / f"{nid}.md"
     counter = 2
-    while file_path.exists():
+    taken = taken_ids or set()
+    while meta.id in taken or not create_note_file(file_path, render_note(meta, body)):
         candidate = _collision_id(nid, counter)
         file_path = target_dir / f"{candidate}.md"
         meta.id = candidate
         counter += 1
-
-    content = render_note(meta, body)
     if meta.x_evidence is not None:
+        # create_note_file claimed the name exclusively; evidence notes are then
+        # replaced atomically (fsync + rename) like every other evidence write.
         from hyperresearch.core.x_artifacts import atomic_write
 
-        atomic_write(file_path, content.encode("utf-8"))
-    else:
-        file_path.write_text(content, encoding="utf-8")
+        atomic_write(file_path, render_note(meta, body).encode("utf-8"))
     return file_path
 
 
@@ -209,6 +301,15 @@ def strip_markdown(text: str) -> str:
     text = re.sub(r"\[\[([^\]|]+)\|([^\]]+)\]\]", r"\2", text)
     text = re.sub(r"\[\[([^\]]+)\]\]", r"\1", text)
     text = re.sub(r"!\[([^\]]*)\]\([^)]+\)", r"\1", text)
-    text = re.sub(r"<[^>]+>", "", text)
+    # Only spans that START like markup are tags: `<` followed by a tag-name
+    # letter, `/` plus a letter (closing tag), `!` (comment, doctype) or `?`
+    # (processing instruction). `<[^>]+>` also ate numeric comparisons, so a
+    # datasheet's `<22.5 V DC ... UIN >23.5 V` was indexed as `23.5 V` and the
+    # search text showed a different threshold from the note. A `<` followed
+    # by a letter still opens a span, so `a<b and c>d` is removed as before.
+    # A closing `>` is still required: an unterminated tag survives into
+    # body_plain whole, which tests/test_serve/test_xss.py asserts as its
+    # premise.
+    text = re.sub(r"<(?:/?[A-Za-z]|!|\?)[^>]*>", "", text)
     text = re.sub(r"\s+", " ", text)
     return text.strip()

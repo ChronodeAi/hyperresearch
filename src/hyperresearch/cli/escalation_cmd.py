@@ -15,6 +15,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import typer
+from rich.markup import escape
 
 from hyperresearch.cli._output import console, output
 from hyperresearch.models.output import error, success
@@ -128,7 +129,8 @@ def escalation_ingest(
     Notes carry `fetch_provider: chrome` — browser-lane provenance is visible.
     """
     from hyperresearch.core.escalation import EscalationError, list_items, resolve
-    from hyperresearch.core.note import write_note
+    from hyperresearch.core.fetcher import discard_unindexed_note
+    from hyperresearch.core.note import indexed_note_ids, write_note
     from hyperresearch.core.scholar import extract_doi
     from hyperresearch.core.sync import compute_sync_plan, execute_sync
 
@@ -179,17 +181,27 @@ def escalation_ingest(
     note_path = write_note(
         vault.notes_dir, title=title, body=body, tags=all_tags,
         status="draft", source=url, extra_frontmatter=extra_meta,
+        taken_ids=indexed_note_ids(conn),
     )
     note_id = note_path.stem
 
     plan = compute_sync_plan(vault)
-    if plan.to_add or plan.to_update:
-        sync_result = execute_sync(vault, plan)
-        if sync_result.errors:
-            envelope = error("Note is durable but indexing failed", "INDEX_PROJECTION_FAILED")
-            envelope.data = {"errors": sync_result.errors, "note_id": note_id}
-            output(envelope, json_mode=json_output)
-            raise typer.Exit(1)
+    sync_result = execute_sync(vault, plan) if plan.to_add or plan.to_update else None
+
+    # A note sync did not index under its own id gets no source row (it would
+    # point at whichever file holds that id), and the item stays claimed.
+    refused = discard_unindexed_note(vault, note_path)
+    if refused:
+        if json_output:
+            output(error(refused, "NOTE_NOT_INDEXED"), json_mode=True)
+        else:
+            console.print(f"[red]Error:[/] {escape(refused)}")
+        raise typer.Exit(1)
+    if sync_result is not None and sync_result.errors:
+        envelope = error("Note is durable but indexing failed", "INDEX_PROJECTION_FAILED")
+        envelope.data = {"errors": sync_result.errors, "note_id": note_id}
+        output(envelope, json_mode=json_output)
+        raise typer.Exit(1)
 
     content_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
     conn.execute(

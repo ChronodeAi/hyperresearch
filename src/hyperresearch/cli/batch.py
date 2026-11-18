@@ -9,6 +9,7 @@ import typer
 
 from hyperresearch.cli._output import console, output
 from hyperresearch.models.output import error, success
+from hyperresearch.search.filters import parent_subtree_filter
 
 VALID_STATUSES = {"draft", "review", "evergreen", "stale", "deprecated", "archive"}
 
@@ -40,9 +41,9 @@ def _get_matching_notes(vault, status=None, tag=None, parent=None, note_type=Non
         clauses.append("n.id IN (SELECT note_id FROM tags WHERE tag = ?)")
         params.append(tag.lower())
     if parent:
-        clauses.append("(n.parent = ? OR n.parent LIKE ?)")
-        params.append(parent)
-        params.append(parent + "/%")
+        clause, values = parent_subtree_filter(parent)
+        clauses.append(clause)
+        params.extend(values)
     if note_type:
         clauses.append("n.type = ?")
         params.append(note_type)
@@ -52,9 +53,18 @@ def _get_matching_notes(vault, status=None, tag=None, parent=None, note_type=Non
         f"SELECT n.id,n.path,n.title,n.source,n.x_evidence,n.fetch_provider,n.fetch_route,n.source_domain,n.fetched_at FROM notes n WHERE {where} ORDER BY n.title",
         params,
     ).fetchall()
+    # A header-less final report is indexed from derived metadata and cannot
+    # take a frontmatter write. The batch commands write in a bare loop, so
+    # it is left out of the selection here rather than refused halfway
+    # through; dry-run previews and "modified" lists stay truthful too.
+    from hyperresearch.core.frontmatter import is_frontmatterless_report
     from hyperresearch.core.x_projection import note_evidence_projection
 
-    return [{**dict(row), **note_evidence_projection(row)} for row in rows]
+    return [
+        {**dict(row), **note_evidence_projection(row)}
+        for row in rows
+        if not is_frontmatterless_report(vault.root / row["path"])
+    ]
 
 
 def _batch_update_files(vault, notes: list[dict], updates: dict) -> tuple[list[str], list[dict]]:
@@ -78,7 +88,7 @@ def _batch_update_files(vault, notes: list[dict], updates: dict) -> tuple[list[s
 
 def _update_file_frontmatter(vault_root: Path, rel_path: str, updates: dict) -> None:
     """Read a note file, patch its frontmatter, write it back."""
-    from hyperresearch.core.frontmatter import parse_frontmatter, serialize_frontmatter
+    from hyperresearch.core.frontmatter import parse_frontmatter, write_frontmatter
 
     file_path = vault_root / rel_path
     content = file_path.read_text(encoding="utf-8-sig")
@@ -94,13 +104,7 @@ def _update_file_frontmatter(vault_root: Path, rel_path: str, updates: dict) -> 
             setattr(meta, key, value)
 
     meta.updated = datetime.now(UTC)
-    new_content = serialize_frontmatter(meta) + "\n" + body
-    if meta.x_evidence is not None:
-        from hyperresearch.core.x_artifacts import atomic_write
-
-        atomic_write(file_path, new_content.encode("utf-8"))
-    else:
-        file_path.write_text(new_content, encoding="utf-8")
+    write_frontmatter(file_path, meta, body, vault_root)
 
 
 # --- Tag operations ---

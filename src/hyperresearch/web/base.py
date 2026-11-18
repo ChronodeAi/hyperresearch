@@ -272,9 +272,14 @@ def _article_provider(
             gates=gates,
         )
 
+    if name == "keenable":
+        from hyperresearch.web.keenable_provider import KeenableProvider
+
+        return KeenableProvider()
+
     raise ValueError(
         f"Unknown web provider: {name!r}. "
-        "Available: builtin, crawl4ai, exa, tavily, parallel, serply, firecrawl"
+        "Available: builtin, crawl4ai, exa, tavily, parallel, serply, firecrawl, keenable"
     )
 
 

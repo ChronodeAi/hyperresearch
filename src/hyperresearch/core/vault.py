@@ -232,5 +232,16 @@ class Vault:
         from hyperresearch.core.sync import compute_sync_plan, execute_sync
 
         plan = compute_sync_plan(self)
-        result = execute_sync(self, plan)
-        self.sync_errors = result.errors
+        if plan.to_add or plan.to_update or plan.to_delete:
+            result = execute_sync(self, plan)
+            self.sync_errors = result.errors
+            return
+        # No note changed, so no full sync: read commands and dry runs stay
+        # write-free. An X operation can still record evidence without a note,
+        # so refresh that projection; it writes nothing when it is current.
+        from hyperresearch.core.x_evidence import EvidenceStore
+
+        projection = EvidenceStore(self.root).rebuild_projection(self.db)
+        if self.db.in_transaction:
+            self.db.commit()
+        self.sync_errors = projection["errors"]

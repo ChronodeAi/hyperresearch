@@ -15,6 +15,8 @@ from mcp.server.fastmcp import FastMCP
 from pydantic import StrictBool, StrictStr
 from hyperresearch.core.x_projection import note_evidence_projection
 
+from hyperresearch.search.filters import parent_subtree_filter
+
 server = FastMCP("hyperresearch", instructions=(
     "hyperresearch is an agent-driven research knowledge base. Corpus tools search, read, "
     "and navigate notes with wiki-links, tags, summaries and canonical X evidence references. "
@@ -31,6 +33,15 @@ server = FastMCP("hyperresearch", instructions=(
 ))
 
 _vault = None
+
+# Most rows one tool call returns. search_notes ships full note bodies, and
+# SQLite reads a negative LIMIT as "no limit", so an unchecked value (from a
+# prompt-injected agent, say) dumps the whole vault into one response.
+_MAX_RESULTS = 200
+
+
+def _clamp_limit(limit: int) -> int:
+    return max(1, min(limit, _MAX_RESULTS))
 
 
 def _get_vault():
@@ -63,8 +74,9 @@ def search_notes(
         tag: Filter by tag (comma-separated for multiple, AND logic)
         status: Filter by status (draft, review, evergreen, stale, deprecated, archive)
         parent: Filter by parent topic (e.g. "ml/deep-learning")
-        limit: Max results to return (default 10)
+        limit: Max results to return (default 10, at most 200)
     """
+    limit = _clamp_limit(limit)
     vault = _get_vault()
     vault.auto_sync()
     from hyperresearch.search.filters import SearchFilters
@@ -174,8 +186,9 @@ def list_notes(status: str = "", tag: str = "", parent: str = "", sort: str = "u
         clauses.append("n.id IN (SELECT note_id FROM tags WHERE tag = ?)")
         params.append(tag.lower())
     if parent:
-        clauses.append("(n.parent = ? OR n.parent LIKE ?)")
-        params.extend([parent, parent + "/%"])
+        clause, values = parent_subtree_filter(parent)
+        clauses.append(clause)
+        params.extend(values)
     where = " AND ".join(clauses)
     sort_map = {"created": "n.created DESC", "updated": "COALESCE(n.updated, n.created) DESC",
                 "title": "n.title ASC", "words": "n.word_count DESC"}
@@ -215,8 +228,9 @@ def get_hubs(limit: int = 20) -> str:
     """Get the most-linked-to notes in the research base (hub notes).
 
     Args:
-        limit: Max results (default 20)
+        limit: Max results (default 20, at most 200)
     """
+    limit = _clamp_limit(limit)
     vault = _get_vault()
     vault.auto_sync()
     rows = vault.db.execute(
@@ -264,7 +278,13 @@ def lint_vault(rule: str = "") -> str:
         for r in conn.execute("SELECT id FROM notes WHERE type NOT IN ('index','raw') AND id NOT IN (SELECT DISTINCT note_id FROM tags)"):
             issues.append({"rule": "missing-tags", "severity": "warning", "note_id": r["id"], "message": "No tags"})
     if "missing-summary" in rules:
-        for r in conn.execute("SELECT id FROM notes WHERE type NOT IN ('index','raw') AND (summary IS NULL OR LENGTH(TRIM(COALESCE(summary, ''))) = 0)"):
+        from hyperresearch.core.frontmatter import is_frontmatterless_report
+
+        for r in conn.execute("SELECT id, path FROM notes WHERE type NOT IN ('index','raw') AND (summary IS NULL OR LENGTH(TRIM(COALESCE(summary, ''))) = 0)"):
+            # The header-less final report has nowhere to keep a summary, and
+            # update_note refuses to write one into it.
+            if is_frontmatterless_report(vault.root / r["path"]):
+                continue
             issues.append({"rule": "missing-summary", "severity": "warning", "note_id": r["id"], "message": "No summary"})
     if "broken-links" in rules:
         for r in conn.execute("SELECT source_id, target_ref FROM links WHERE target_id IS NULL"):
@@ -298,8 +318,9 @@ def list_sources(domain: str = "", limit: int = 50) -> str:
 
     Args:
         domain: Filter by domain (e.g. "arxiv.org"). Leave empty for all.
-        limit: Max results (default 50)
+        limit: Max results (default 50, at most 200)
     """
+    limit = _clamp_limit(limit)
     vault = _get_vault()
     if domain:
         rows = vault.db.execute(
@@ -317,7 +338,7 @@ def list_sources(domain: str = "", limit: int = 50) -> str:
 
 
 @server.tool()
-def fetch_url(url: str, tags: str = "", provider: str = "") -> str:
+async def fetch_url(url: str, tags: str = "", provider: str = "") -> str:
     """Fetch a URL and save it as a research note.
 
     Args:
@@ -325,7 +346,9 @@ def fetch_url(url: str, tags: str = "", provider: str = "") -> str:
         tags: Comma-separated tags (e.g. "ml,transformers")
         provider: Web provider override (leave empty for default)
     """
-    from hyperresearch.core.fetcher import DuplicateURL, fetch_and_save
+    import anyio
+
+    from hyperresearch.core.fetcher import DuplicateURL, prepare_fetch, save_fetched
     from hyperresearch.web.opencli_provider import NativeSourceError
 
     vault = _get_vault()
@@ -333,10 +356,12 @@ def fetch_url(url: str, tags: str = "", provider: str = "") -> str:
     tag_list = [t.strip() for t in tags.split(",") if t.strip()]
 
     try:
-        result = fetch_and_save(
-            vault, url, tags=tag_list,
-            provider_name=provider or None,
-        )
+        # Only the network fetch leaves the loop thread (#118): a sync fetch here
+        # stalls every other request, and the vault's sqlite connection only
+        # works on the thread that opened it, so prepare/save stay on this one.
+        prov = prepare_fetch(vault, url, provider_name=provider or None)
+        fetched = await anyio.to_thread.run_sync(prov.fetch, url)
+        result = save_fetched(vault, url, prov, fetched, tags=tag_list)
         return json.dumps({"ok": True, "data": result})
     except NativeSourceError as e:
         return json.dumps({"ok": False, "error": str(e), "error_code": e.code, "data": e.result})
@@ -358,7 +383,7 @@ def create_note(title: str, body: str, tags: str = "", source: str = "", summary
         summary: One-line summary (auto-generated if empty)
     """
     from hyperresearch.core.enrich import enrich_note_file
-    from hyperresearch.core.note import write_note
+    from hyperresearch.core.note import indexed_note_ids, write_note
     from hyperresearch.core.sync import compute_sync_plan, execute_sync
 
     vault = _get_vault()
@@ -383,6 +408,7 @@ def create_note(title: str, body: str, tags: str = "", source: str = "", summary
         source=source or None,
         summary=summary or None,
         extra_frontmatter=extra if extra else None,
+        taken_ids=indexed_note_ids(vault.db),
     )
 
     enrich_note_file(note_path, vault.db, tag_list)
@@ -417,7 +443,11 @@ def update_note(note_id: str, status: str = "", add_tags: str = "", remove_tags:
         remove_tags: Comma-separated tags to remove
         summary: New summary text
     """
-    from hyperresearch.core.frontmatter import parse_frontmatter, serialize_frontmatter
+    from hyperresearch.core.frontmatter import (
+        FrontmatterWriteRefusedError,
+        parse_frontmatter,
+        write_frontmatter,
+    )
     from hyperresearch.core.sync import compute_sync_plan, execute_sync
     from hyperresearch.models.note import NoteStatus
 
@@ -469,13 +499,10 @@ def update_note(note_id: str, status: str = "", add_tags: str = "", remove_tags:
                                               "fetch_provider": meta.fetch_provider,
                                               "fetch_route": meta.fetch_route}})
 
-    content = serialize_frontmatter(meta) + "\n" + body
-    if meta.x_evidence is not None:
-        from hyperresearch.core.x_artifacts import atomic_write
-
-        atomic_write(file_path, content.encode("utf-8"))
-    else:
-        file_path.write_text(content, encoding="utf-8")
+    try:
+        write_frontmatter(file_path, meta, body, vault.root)
+    except FrontmatterWriteRefusedError as exc:
+        return json.dumps({"ok": False, "error": str(exc), "error_code": "REPORT_WITHOUT_FRONTMATTER"})
 
     plan = compute_sync_plan(vault)
     sync_result = execute_sync(vault, plan)

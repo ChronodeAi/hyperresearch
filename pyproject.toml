@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hyperresearch"
-version = "0.12.0"
+version = "0.13.3"
 description = "Claude Code harness for disciplined, adversarially-audited deep research with full provenance."
 readme = "README.md"
 license = "MIT"
@@ -35,6 +35,8 @@ dependencies = [
     "jsonschema[format]>=4.25,<5",
     "cryptography>=45",
     "rfc8785>=0.1.4,<1",
+    "numpy>=1.26",
+    "idna",
 ]
 
 [project.optional-dependencies]

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import yaml
+
 from hyperresearch.core.frontmatter import parse_frontmatter, render_note
 from hyperresearch.core.note import read_note
 from hyperresearch.core.x_artifacts import atomic_write, decode_json
@@ -74,41 +76,47 @@ def import_json_notes(vault, path: Path, prefix: str, dry_run: bool) -> list[dic
             for destination, _, _ in prepared]
 
 
-def import_markdown_notes(vault, source: Path, prefix: str, dry_run: bool) -> list[dict]:
-    files = [file for file in sorted(source.rglob("*.md"))
-             if not any(part in {".hyperresearch", ".git", ".venv", "node_modules", "templates", "evidence"}
-                        for part in file.relative_to(source).parts)]
-    prepared = []
-    for file in files:
-        if file.is_symlink():
-            raise ValueError("Symlink note import refused")
-        metadata, body = parse_frontmatter(file.read_text(encoding="utf-8-sig"))
-        relative = file.relative_to(source).as_posix()
-        destination = note_destination(vault.notes_dir, f"{prefix}/{relative}" if prefix else relative)
-        data = (render_note(metadata, inert_markdown(body)).encode("utf-8")
-                if metadata.x_evidence is not None else file.read_bytes())
-        if destination.exists() and destination.read_bytes() != data:
-            raise ValueError(f"Note import would overwrite an existing note: {relative}")
-        prepared.append((file, destination, data, metadata))
-    store = EvidenceStore(vault.root)
+def markdown_import_bytes(file: Path) -> tuple[bytes | None, NoteMeta | None]:
+    """The bytes to write for a note carrying X evidence (inert body), else (None, None).
+
+    A symlinked note is refused: its target can sit outside the import source.
+    An ordinary note whose frontmatter does not parse is copied as-is (sync
+    then reports it as not indexed); one that declares X evidence is refused.
+    """
+    if file.is_symlink():
+        raise ValueError(f"Symlink note import refused: {file.name}")
+    text = file.read_text(encoding="utf-8-sig")
+    try:
+        metadata, body = parse_frontmatter(text)
+    except (yaml.YAMLError, ValueError) as exc:
+        if "x_evidence" not in text.split("\n---", 1)[0]:
+            return None, None
+        raise ValueError(f"Note with X evidence has invalid frontmatter: {file.name}: {exc}") from exc
+    if metadata.x_evidence is None:
+        return None, None
+    return render_note(metadata, inert_markdown(body)).encode("utf-8"), metadata
+
+
+def import_markdown_evidence(vault, source: Path, metas: list[NoteMeta], dry_run: bool) -> None:
+    """Import the X artifact closure beside a markdown export, then check each note's refs.
+
+    A dry run validates against a temporary store and publishes nothing.
+    """
     sidecar = source / "x-evidence.json"
     if sidecar.is_symlink():
         raise ValueError("Symlink evidence sidecar refused")
     if not dry_run:
+        store = EvidenceStore(vault.root)
         if sidecar.exists():
             store.import_artifacts(sidecar)
-        for _, _, _, metadata in prepared:
+        for metadata in metas:
             store.validate_note_refs(metadata.x_evidence)
-        for _, destination, data, _ in prepared:
-            atomic_write(destination, data, immutable=True)
-    else:
-        import tempfile
+        return
+    import tempfile
 
-        with tempfile.TemporaryDirectory() as temporary:
-            preview_store = EvidenceStore(Path(temporary) / "preview")
-            if sidecar.exists():
-                preview_store.import_artifacts(sidecar)
-            for _, _, _, metadata in prepared:
-                preview_store.validate_note_refs(metadata.x_evidence)
-    return [{"source": file.relative_to(source).as_posix(), "destination": destination.relative_to(vault.notes_dir).as_posix()}
-            for file, destination, _, _ in prepared]
+    with tempfile.TemporaryDirectory() as temporary:
+        preview_store = EvidenceStore(Path(temporary) / "preview")
+        if sidecar.exists():
+            preview_store.import_artifacts(sidecar)
+        for metadata in metas:
+            preview_store.validate_note_refs(metadata.x_evidence)

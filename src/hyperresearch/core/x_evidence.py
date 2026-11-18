@@ -290,6 +290,10 @@ class EvidenceStore:
                 errors.append({"path": entry["ref"]["path"], "error": str(exc)})
         if errors:
             return {"records": 0, "errors": errors}
+        current = {tuple(row) for row in conn.execute("SELECT path, sha256, kind, artifact_root FROM x_records")}
+        if current == {row[:4] for row in rows}:
+            # Unchanged: rewriting the same rows would take the writer lock on every open.
+            return {"records": len(rows), "errors": []}
         conn.execute("DELETE FROM x_records")
         conn.executemany("INSERT INTO x_records(path,sha256,kind,artifact_root,payload) VALUES (?,?,?,?,?)", rows)
         return {"records": len(rows), "errors": []}

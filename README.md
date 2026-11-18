@@ -1,4 +1,4 @@
-<img width="1280" height="400" alt="hyperresearch-readme-hero-1280x400" src="https://github.com/user-attachments/assets/320680fc-bc56-4eac-9ec2-7ec46d4bde98" />
+<img width="1280" height="400" alt="hyperresearch: Research built on evidence. It searches the web, scholarly papers, SEC filings, clinical trials, economic data and more. It checks the citations and keeps every source, so each run builds on the last." src="https://raw.githubusercontent.com/jordan-gibbs/hyperresearch/main/assets/readme-hero.png" />
 
 <h3 align="center">The Most Powerful Deep Research Harness: a deep research skill for Claude Code and OpenAI Codex</h3>
 
@@ -16,9 +16,13 @@
 
 ---
 
-**Hyperresearch turns Claude Code into a deep research agent: one that currently leads the DeepResearch-Bench RACE leaderboard (benchmarked internally). It runs in OpenAI Codex too.** A tier-adaptive 16-step pipeline takes one prompt and produces an adversarially-audited report with full source provenance. Every source it reads lands in a persistent, searchable vault, so each session starts smarter than the last.
+**Hyperresearch turns Claude Code into a deep research agent, and it runs in OpenAI Codex too. Its hosted version, Hyperresearch Deep, is #1 on the DRACO deep research benchmark at 77.7 (10 tasks), ahead of Claude Research, ChatGPT, Gemini and Perplexity.** A tier-adaptive 16-step pipeline takes one prompt and produces an adversarially-audited report with full source provenance. Every source it reads lands in a persistent, searchable vault, so each session starts smarter than the last.
 
-**Don't want to run it locally?** [Hyperresearch](https://hyperresearch.ai/?utm_source=github&utm_medium=readme) is the hosted version: the same pipeline, with no Claude Code or Codex install needed.
+<p align="center">
+  <img src="assets/how-it-works.gif" alt="hyperresearch in Claude Code: /hyperresearch splits the question, gathers 214 sources from web, OpenAlex, Crossref, SEC EDGAR, FRED and CORE into research/notes, cite-checks every claim and fixes the unsupported one, then writes the final cited report" width="780">
+</p>
+
+**Don't want to run it locally?** [Hyperresearch](https://hyperresearch.ai/?utm_source=github&utm_medium=readme) is the hosted version: the same pipeline, with no Claude Code or Codex install needed, plus a REST API, a remote MCP server and a citation-verification API.
 
 > [!NOTE]
 > **New: hyperresearch runs on OpenAI Codex.** One command installs the full pipeline for Codex: entry skill, step procedures, the subagent roster as Codex custom agents, and a Stop hook that keeps Codex from skipping steps. Same vault, same ship gate as on Claude Code.
@@ -31,10 +35,19 @@
 > Codex support ships in the next PyPI release; until then install from GitHub with `pip install git+https://github.com/jordan-gibbs/hyperresearch`. Details and what differs on Codex: [Codex](#codex).
 
 <p align="center">
-  <img src="assets/benchmark.png" alt="DeepResearch-Bench top-5 hyperresearch leads the chart ahead of Grep Deep Research, Cellcog Max, nvidia-aiq, Gemini Deep Research, and OpenAI Deep Research" width="780">
+  <a href="https://hyperresearch.ai/benchmarks/draco?utm_source=github&utm_medium=readme"><img src="assets/draco-board.svg" alt="DRACO deep research benchmark, 10 tasks, same judge: Hyperresearch Deep 77.7 is #1, ahead of Claude Research (Opus) 73.0, Parallel Ultra 61.5, You.com Research 60.1, Perplexity Deep Research 57.8, Valyu DeepResearch Heavy 57.2, ChatGPT Deep research 55.2 and Gemini Deep Research 54.7" width="780"></a>
 </p>
 
-<p align="center"><sub>Forward-looking projection from a stratified pilot against the DeepResearch-Bench leaderboard snapshot (https://huggingface.co/spaces/muset-ai/DeepResearch-Bench-Leaderboard). Third party validation is pending.</sub></p>
+## See a sample report
+
+Read a full report before you install anything. These are unedited Deep runs from the hosted version, and you don't need to log in:
+
+- [Toast vs Square vs Clover](https://hyperresearch.ai/samples/restaurant-pos-competitor-analysis?utm_source=github&utm_medium=readme): a restaurant POS competitor analysis, built mostly from SEC filings (241 sources)
+- [Buying a $2M HVAC business](https://hyperresearch.ai/samples/buying-an-hvac-business?utm_source=github&utm_medium=readme): multiples, SBA loans and diligence (213 sources)
+- [Who is winning AI coding agents, October 2026](https://hyperresearch.ai/samples/ai-coding-agents?utm_source=github&utm_medium=readme) (259 sources)
+- [Snowflake vs Databricks](https://hyperresearch.ai/samples/snowflake-vs-databricks?utm_source=github&utm_medium=readme): a costed first year for a 2,000-person AWS buyer, from filings and both rate cards (259 sources)
+
+These are the same kind of hosted Deep runs that put Hyperresearch at #1 on DRACO, at 77.7 (10 tasks). Our Finance, Academic and Law reports were produced by our current Deep writer from the research each task's run collected. Method and per-task scores are on the [benchmark page](https://hyperresearch.ai/benchmarks/draco?utm_source=github&utm_medium=readme).
 
 ## Why it wins
 
@@ -427,6 +440,7 @@ The `[web] provider` setting in `.hyperresearch/config.toml` picks how pages are
 - **`parallel`** — [Parallel](https://parallel.ai/)'s Search MCP endpoint, which needs no account or key. Search only — bulk fetch waves degrade to per-URL, so it is a good search provider rather than a replacement for the crawl4ai fetch path. Every request from one process carries a random session ID that Parallel uses for correlation and rate limiting on its side. `pip install "hyperresearch[parallel]"`.
 - **`serply`** — [Serply](https://serply.io)'s Google search API, with page fetch through the same key ([API docs](https://serply.io/docs)). Search results are fetched to full page text, falling back to the snippet when a page cannot be fetched. Needs an API key; no extra install.
 - **`firecrawl`** — [Firecrawl](https://firecrawl.dev)'s hosted scraping and search ([API docs](https://docs.firecrawl.dev)). Pages render in Firecrawl's browsers and come back as Markdown; bulk fetch waves run as one batch job. Firecrawl cannot use a local login profile, so crawl4ai takes over for the visible-browser lane, for hosts reached through `allow_private_hosts` (these URLs never go to Firecrawl), on any Firecrawl API error (credits, rate limit), and when Firecrawl gets blocked: HTTP 401/403/407/429/5xx, a login wall, or a bot-detection page. Notes record whichever provider served them in `fetch_provider`. PDFs use the shared PDF lane first. Set `FIRECRAWL_API_KEY`; without it, single fetches and search use Firecrawl's per-IP keyless tier and batches go one URL at a time. No extra install. `hyperresearch setup` offers it in step 1, and its browser-profile step then sets up the login profile the crawl4ai fallback uses.
+- **`keenable`**: [Keenable](https://keenable.ai)'s search API, with page fetch through the same API ([API docs](https://docs.keenable.ai)). Search results already carry page text, so there is no per-result fetch. Works without a key, rate limited per IP (10 requests per second, 1000 per hour); setting `KEENABLE_API_KEY` lifts the limits. No extra install.
 
 ```toml
 # .hyperresearch/config.toml
@@ -531,7 +545,7 @@ Publishers block their own open-access PDFs often enough that one attempt isn't 
 
 - It doesn't replace your judgment on which sources matter. The agent picks, you steer.
 - It can't fetch what's behind a paywall you haven't logged into. Open-access recovery finds a legal free copy when one exists — even when the publisher blocks the fetch outright — but when none exists you get the abstract, or nothing, and the note says so.
-- On Claude Code it runs on Anthropic models via the subagent roster (per-agent assignments come from the profile's model map). On Codex, subagents use the session's model unless a Codex override is configured. Usage scales with tier, gear, and corpus size. The Codex port is new and has not been benchmarked yet; the Claude Code pipeline is the one the leaderboard numbers come from.
+- On Claude Code it runs on Anthropic models via the subagent roster (per-agent assignments come from the profile's model map). On Codex, subagents use the session's model unless a Codex override is configured. Usage scales with tier, gear, and corpus size. The Codex port is new and has not been benchmarked yet; the Claude Code pipeline is the one that has been benchmarked.
 - The lint gate catches **structural** failures (missing scaffold, broken provenance, unresolved CRITICALs). It cannot guarantee factual accuracy, that's still your call.
 
 ---

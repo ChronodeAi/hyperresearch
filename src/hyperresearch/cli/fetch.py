@@ -9,10 +9,15 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import typer
+from rich.markup import escape
 
 from hyperresearch.cli._output import console, err_console, output
 from hyperresearch.core.config import AssetSettings, FetchSettings
-from hyperresearch.core.fetcher import existing_live_note_for_url, reclaim_orphaned_source_row
+from hyperresearch.core.fetcher import (
+    discard_unindexed_note,
+    existing_live_note_for_url,
+    reclaim_orphaned_source_row,
+)
 from hyperresearch.models.output import error, success
 
 app = typer.Typer()
@@ -41,7 +46,7 @@ def _append_suggested_by_to_existing(
     actually added.
     """
     # Find the note file — scan research/notes/ for `<note-id>.md` or walk subdirs
-    from hyperresearch.core.frontmatter import parse_frontmatter, serialize_frontmatter
+    from hyperresearch.core.frontmatter import parse_frontmatter, write_frontmatter
 
     note_path = None
     for candidate in vault_root.rglob(f"{note_id}.md"):
@@ -75,8 +80,7 @@ def _append_suggested_by_to_existing(
     # Prepend the new breadcrumb lines to the body
     breadcrumb_block = "\n".join(new_lines) + "\n\n"
     new_body = breadcrumb_block + body
-    new_text = serialize_frontmatter(meta) + "\n" + new_body
-    note_path.write_text(new_text, encoding="utf-8")
+    write_frontmatter(note_path, meta, new_body, vault_root)
     return added
 
 
@@ -226,7 +230,7 @@ def fetch(
     json_output: bool = typer.Option(False, "--json", "-j", help="JSON output"),
 ) -> None:
     """Fetch a URL and save its content as a research note."""
-    from hyperresearch.core.note import write_note
+    from hyperresearch.core.note import indexed_note_ids, write_note
     from hyperresearch.core.sync import compute_sync_plan, execute_sync
     from hyperresearch.core.vault import Vault, VaultError
     from hyperresearch.web.base import get_provider, served_by
@@ -361,7 +365,6 @@ def fetch(
                 output(envelope, json_mode=True)
             else:
                 from hyperresearch.core.x_projection import terminal_text
-                from rich.markup import escape
 
                 console.print(f"[red]Native X outcome:[/] {escape(terminal_text(str(e)))}")
             raise typer.Exit(1)
@@ -514,6 +517,7 @@ def fetch(
         tier=detected_tier,
         content_type=detected_content_type,
         extra_frontmatter=extra_meta,
+        taken_ids=indexed_note_ids(conn),
     )
 
     # Save raw file (PDF, etc.) if present
@@ -543,23 +547,32 @@ def fetch(
     # The text-injection approach used previously was silently dropped by
     # NoteMeta.model_config = {"extra": "ignore"} on the next parse.
     if raw_file_path:
-        from hyperresearch.core.frontmatter import parse_frontmatter, render_note
+        from hyperresearch.core.frontmatter import parse_frontmatter, write_frontmatter
         note_text = note_path.read_text(encoding="utf-8")
         meta, body = parse_frontmatter(note_text)
         if meta.raw_file != raw_file_path:
             meta.raw_file = raw_file_path
-            note_path.write_text(render_note(meta, body), encoding="utf-8")
+            write_frontmatter(note_path, meta, body, vault.root)
 
     # Sync first so the note exists in the notes table (needed for FK on sources/assets)
     note_id = note_path.stem
     plan = compute_sync_plan(vault)
-    if plan.to_add or plan.to_update:
-        sync_result = execute_sync(vault, plan)
-        if sync_result.errors:
-            envelope = error("Note is durable but indexing failed", "INDEX_PROJECTION_FAILED")
-            envelope.data = {"note_id": note_id, "errors": sync_result.errors, "x_evidence": extra_meta.get("x_evidence")}
-            output(envelope, json_mode=json_output)
-            raise typer.Exit(1)
+    sync_result = execute_sync(vault, plan) if plan.to_add or plan.to_update else None
+
+    # The id is free when write_note picks it, but another file can still take
+    # it before this sync. Recording the source then would wire it to that note.
+    refused = discard_unindexed_note(vault, note_path, raw_file_path)
+    if refused:
+        if json_output:
+            output(error(refused, "NOTE_NOT_INDEXED"), json_mode=True)
+        else:
+            console.print(f"[red]Not indexed:[/] {escape(refused)}")
+        raise typer.Exit(1)
+    if sync_result is not None and sync_result.errors:
+        envelope = error("Note is durable but indexing failed", "INDEX_PROJECTION_FAILED")
+        envelope.data = {"note_id": note_id, "errors": sync_result.errors, "x_evidence": extra_meta.get("x_evidence")}
+        output(envelope, json_mode=json_output)
+        raise typer.Exit(1)
 
     # Record source in DB. Use INSERT OR IGNORE to survive a duplicate-URL
     # race: two parallel fetches on the same URL both pass the earlier
