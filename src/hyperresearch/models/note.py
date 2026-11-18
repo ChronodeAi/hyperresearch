@@ -7,7 +7,7 @@ import unicodedata
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class NoteStatus(StrEnum):
@@ -93,6 +93,8 @@ class NoteMeta(BaseModel):
     source_domain: str | None = None
     fetched_at: datetime | None = None
     fetch_provider: str | None = None
+    fetch_route: str | None = None       # Configured route, distinct from actual producer
+    x_evidence: dict | None = None       # Governed note-evidence-refs, never extra-ignore data
     status: NoteStatus = NoteStatus.DRAFT
     type: NoteType = NoteType.NOTE
     tier: Tier | None = None             # Epistemic role (ground_truth/institutional/practitioner/commentary)
@@ -124,6 +126,27 @@ class NoteMeta(BaseModel):
     # open-access copy and nothing in it came from `source`.
     oa_recovery_kind: str | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def historical_x_facts(cls, value):
+        from hyperresearch.core.x_projection import is_x_url, unknown_evidence
+
+        if isinstance(value, dict) and is_x_url(value.get("source")) and value.get("x_evidence") is None:
+            value = {**value, "x_evidence": unknown_evidence()}
+        return value
+
+    @field_validator("x_evidence", mode="before")
+    @classmethod
+    def validate_x_evidence(cls, value):
+        if value is None:
+            return None
+        from hyperresearch.models.x_evidence import validate_record
+        from hyperresearch.core.x_artifacts import reject_credentials
+
+        reject_credentials(value)
+
+        return validate_record("note-evidence-refs", value)
+
     @field_validator("tags", mode="before")
     @classmethod
     def lowercase_tags(cls, v: list[str]) -> list[str]:
@@ -136,7 +159,7 @@ class NoteMeta(BaseModel):
             return slugify(v)
         return v
 
-    model_config = {"use_enum_values": True, "extra": "ignore"}
+    model_config = {"use_enum_values": True, "extra": "ignore", "hide_input_in_errors": True}
 
 
 class Note(BaseModel):

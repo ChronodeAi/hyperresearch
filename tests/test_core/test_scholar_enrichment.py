@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 
 import pytest
 
@@ -82,6 +83,31 @@ class TestScoreSources:
         text = next(doi_vault.notes_dir.glob("cited-paper.md")).read_text(encoding="utf-8")
         assert "citation_count: 512" in text
         assert "venue: Nature" in text
+
+    def test_concurrent_writer_can_update_notes_during_metadata_lookups(
+        self, doi_vault, monkeypatch, no_sleep,
+    ):
+        db_path = doi_vault.db.execute("PRAGMA database_list").fetchone()["file"]
+        calls = 0
+
+        def fetch_while_another_process_writes(url):
+            nonlocal calls
+            calls += 1
+            with sqlite3.connect(db_path, timeout=0) as other:
+                other.execute(
+                    "UPDATE notes SET summary = ? WHERE id = 'plain-blog'",
+                    (f"written during lookup {calls}",),
+                )
+            return OPENALEX_CITED if "10.1%2Fcited" in url else OPENALEX_RETRACTED
+
+        monkeypatch.setattr(scholar, "_http_get_json", fetch_while_another_process_writes)
+        result = scholar.score_sources(doi_vault)
+
+        row = doi_vault.db.execute(
+            "SELECT summary FROM notes WHERE id = 'plain-blog'"
+        ).fetchone()
+        assert row["summary"] == "written during lookup 2"
+        assert result["retracted"] == ["retracted-paper"]
 
     def test_retracted_gets_quality_floor(self, doi_vault, monkeypatch):
         _stub_openalex(monkeypatch, {

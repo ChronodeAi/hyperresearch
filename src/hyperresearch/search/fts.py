@@ -6,6 +6,7 @@ import re
 import sqlite3
 
 from hyperresearch.search.filters import SearchFilters
+from hyperresearch.core.x_projection import note_evidence_projection
 
 
 class SearchQueryError(ValueError):
@@ -114,6 +115,7 @@ def search_fts(
             n.id, n.title, n.path, n.status, n.type, n.tier, n.content_type,
             n.quality_score, n.doi, n.venue, n.citation_count, n.is_retracted, n.oa_version,
             n.created, n.updated, n.word_count, n.summary,
+            n.source,n.x_evidence,n.fetch_provider,n.fetch_route,n.source_domain,n.fetched_at,
             {snippet} as snippet,
             {score} as score,
             (SELECT GROUP_CONCAT(t.tag, ',') FROM tags t WHERE t.note_id = n.id) as tag_list
@@ -162,6 +164,7 @@ def search_fts(
             "quality_score": row["quality_score"] if "quality_score" in row.keys() else None,  # noqa: SIM118
             "score": abs(row["score"]),
             "snippet": row["snippet"] or "",
+            **note_evidence_projection(row),
         })
 
     # Apply status-based ranking adjustments

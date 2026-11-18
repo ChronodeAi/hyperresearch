@@ -122,6 +122,9 @@ class FirecrawlProvider:
 
     def fetch(self, url: str) -> WebResult:
         """Fetch one URL through Firecrawl, falling back to crawl4ai when it can't."""
+        from hyperresearch.web.base import require_article_url
+
+        require_article_url(url)
         local_reason = self._local_only_reason(url)
         if local_reason:
             return self._fallback_fetch(url, local_reason)

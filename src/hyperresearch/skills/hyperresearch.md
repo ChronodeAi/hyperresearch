@@ -22,6 +22,23 @@ description: >
 
 # Hyperresearch V8 — multi-skill chain orchestrator
 
+## Route continuous X requests first
+
+For a real-time/continuous X keyword monitor, supplied-data Jev classification,
+sentiment, crypto discovery leads or observed market-flow analytics, use the
+separate `hyperresearch-x-monitor` skill. This is not a report-pipeline run:
+do not bootstrap a vault tag/report manifest or invoke the 16 steps below.
+Install only that resource if it is missing:
+
+```bash
+{hpr_path} x install-skill --platform << platform >> --scope project --json
+```
+
+Then read the installed `hyperresearch-x-monitor/SKILL.md` for the selected
+provider and follow it. Source, paid-model/export and observation authority are
+independent; no monitor or classifier grant confers trading authority.
+
+
 You are the orchestrator. Your entire job in this conversation is:
 1. Read this file once at the start.
 2. Bootstrap canonical inputs (research_query, vault_tag, scaffold).

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiwg.io/schemas/hyperresearch-x-analysis-annotation.v1.json",
+  "title": "Hyperresearch X typed analysis annotation v1",
+  "$comment": "Raw typed judgments and deterministic guards remain separate. Source/model answers are data, not authority. Actual transmitted bytes are retained by request_ref and effective_input_digest; missing facts are null. Local catalog identity, not publication.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "annotation_id", "revision", "capture_ref", "capture_revision", "context_refs", "query_ref", "rubric_ref", "question_refs", "policy_ref", "requested_model", "returned_model", "effective_input_digest", "export", "raw_answers", "source_spans", "entity_candidates", "guarded_result", "status", "usage", "timing", "reservation", "error", "producer"],
+  "properties": {
+    "schema_version": {"const": 1}, "annotation_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"},
+    "capture_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "capture_revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"},
+    "context_refs": {"type": "array", "items": {"$ref": "#/$defs/context_ref"}},
+    "query_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/query_ref"}, {"type": "null"}]},
+    "rubric_ref": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/version_ref"},
+    "question_refs": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["id", "revision", "options_digest"], "properties": {"id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"}, "options_digest": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/sha256"}}}},
+    "policy_ref": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/version_ref"},
+    "requested_model": {"type": ["string", "null"], "minLength": 1}, "returned_model": {"type": ["string", "null"], "minLength": 1},
+    "effective_input_digest": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/sha256"}, {"type": "null"}]},
+    "export": {"$ref": "#/$defs/export_state"},
+    "raw_answers": {"type": "array", "items": {"$ref": "#/$defs/raw_answer"}},
+    "source_spans": {"type": "array", "items": {"$ref": "#/$defs/source_span"}},
+    "entity_candidates": {"type": "array", "items": {"$ref": "#/$defs/entity_candidate"}},
+    "guarded_result": {"$ref": "#/$defs/guarded_result"},
+    "status": {"enum": ["available", "abstained", "insufficient-context", "unavailable", "failed", "deferred"]},
+    "usage": {"$ref": "#/$defs/usage"}, "timing": {"$ref": "#/$defs/timing"}, "reservation": {"$ref": "#/$defs/reservation"},
+    "error": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/safe_error"}, {"type": "null"}]},
+    "producer": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/producer"},
+    "raw_response_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"},
+    "supersedes": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "pending_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"},
+    "plan_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/plan_ref"}, "profile_ref": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/version_ref"}, "trusted_policy_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}
+  },
+  "allOf": [{"if": {"properties": {"status": {"const": "available"}}}, "then": {"properties": {"raw_answers": {"type": "array", "minItems": 1}, "requested_model": {"type": "string"}, "effective_input_digest": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/sha256"}, "export": {"type": "object", "properties": {"policy_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "grant_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "request_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}}}}}}],
+  "$defs": {
+    "context_ref": {"type": "object", "additionalProperties": false, "required": ["capture_ref", "revision", "delivery"], "properties": {"capture_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"}, "delivery": {"enum": ["delivered", "unavailable", "unknown"]}}},
+    "export_state": {
+      "type": "object", "additionalProperties": false, "required": ["policy_ref", "grant_ref", "request_ref", "exported_fields", "omitted_fields", "redactions", "context_state"],
+      "properties": {
+        "policy_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "grant_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "request_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]},
+        "exported_fields": {"type": "array", "uniqueItems": true, "items": {"enum": ["focal_text", "context_text", "author_handle", "post_url", "post_ids", "relationships", "source_spans", "entity_candidates", "query", "question_instructions", "question_options", "profile_target"]}},
+        "omitted_fields": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "redactions": {"type": "array", "uniqueItems": true, "items": {"enum": ["author_identity", "urls", "handles", "personal_data"]}}, "context_state": {"enum": ["complete", "partial", "missing", "not-required"]}
+      }
+    },
+    "raw_answer": {
+      "type": "object", "additionalProperties": false, "required": ["question_id", "question_revision", "type", "choice", "probabilities"],
+      "properties": {"question_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "question_revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"}, "type": {"const": "choice"}, "choice": {"type": ["string", "null"]}, "probabilities": {"type": ["object", "null"], "additionalProperties": {"type": "number", "minimum": 0, "maximum": 1}}, "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1}}
+    },
+    "source_span": {"type": "object", "additionalProperties": false, "required": ["capture_ref", "start", "end", "text"], "properties": {"capture_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "start": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/count"}, "end": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/count"}, "text": {"type": "string"}}, "$comment": "Unicode codepoint offsets into the exact delivered text. Runtime proves end>=start and equality with the attributed source slice."},
+    "entity_candidate": {
+      "type": "object", "additionalProperties": false, "required": ["kind", "chain_id", "address", "symbol", "venue", "source_span_indexes", "state"],
+      "properties": {"kind": {"enum": ["chain-contract", "pool", "venue", "symbol", "address"]}, "chain_id": {"type": ["string", "null"], "pattern": "^[a-z0-9-]+:[A-Za-z0-9_-]+$"}, "address": {"type": ["string", "null"]}, "symbol": {"type": ["string", "null"]}, "venue": {"type": ["string", "null"]}, "source_span_indexes": {"type": "array", "minItems": 1, "items": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/count"}}, "state": {"enum": ["asserted", "ambiguous", "validated"]}, "candidate_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "value": {"type": "string"}, "units": {"type": ["string", "null"]}, "source_span": {"$ref": "#/$defs/source_span"}},
+      "allOf": [{"if": {"properties": {"kind": {"enum": ["chain-contract", "pool"]}}}, "then": {"properties": {"chain_id": {"type": "string"}, "address": {"type": "string", "minLength": 1}}}}]
+    },
+    "guarded_result": {
+      "type": "object", "additionalProperties": false, "required": ["disposition", "labels", "reasons", "rule_ref"],
+      "properties": {"disposition": {"enum": ["include", "exclude", "needs-context", "needs-verification", "abstain", "unavailable", "retain", "review", "deprioritize"]}, "labels": {"type": "array", "items": {"type": "string"}}, "reasons": {"type": "array", "items": {"type": "string"}}, "rule_ref": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/version_ref"}, "relevance": {"type": ["string", "null"]}, "sentiment": {"type": ["string", "null"]}, "source_type": {"type": ["string", "null"]}, "narrative": {"type": ["string", "null"]}, "negative_veto": {"type": "boolean"}}
+    },
+    "usage": {"type": "object", "additionalProperties": false, "required": ["input_tokens", "output_tokens", "cost_usd", "provider_reported"], "properties": {"input_tokens": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_count"}, "output_tokens": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_count"}, "cost_usd": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nonnegative_decimal"}, {"type": "null"}]}, "provider_reported": {"type": "boolean"}}},
+    "timing": {"type": "object", "additionalProperties": false, "required": ["started_at", "completed_at", "elapsed_ms"], "properties": {"started_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"}, "completed_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"}, "elapsed_ms": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_count"}}},
+    "reservation": {"type": "object", "additionalProperties": false, "required": ["attempts", "reserved_requests", "reserved_tokens", "reserved_cost_usd", "state"], "properties": {"attempts": {"type": "integer", "minimum": 0, "maximum": 1000}, "reserved_requests": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/count"}, "reserved_tokens": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/count"}, "reserved_cost_usd": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nonnegative_decimal"}, "state": {"enum": ["reserved", "settled", "unknown", "released"]}, "reservation_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "request_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "deadline_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}}},
+    "json_value": {"anyOf": [{"type": "string"}, {"type": "number"}, {"type": "boolean"}, {"type": "null"}, {"type": "array", "items": {"$ref": "#/$defs/json_value"}}, {"type": "object", "propertyNames": {"not": {"enum": ["authorization", "cookie", "cookies", "headers", "api_key", "access_token", "private_key"]}}, "additionalProperties": {"$ref": "#/$defs/json_value"}}]},
+    "analysis_request": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "plan", "query", "capture_ref", "context_refs", "questions", "guard_policy", "request_body", "wire_body_utf8", "deadline_at", "sdk"],
+      "properties": {
+        "schema_version": {"const": 1}, "plan": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json"}, "query": {"anyOf": [{"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/query"}, {"type": "null"}]}, "capture_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "context_refs": {"type": "array", "items": {"$ref": "#/$defs/context_ref"}}, "questions": {"type": "array", "items": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/question"}}, "guard_policy": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/analysis_policy"},
+        "request_body": {"type": "object", "additionalProperties": false, "required": ["state", "model", "questions"], "properties": {"state": {"$ref": "#/$defs/json_value"}, "model": {"type": "string", "minLength": 1}, "questions": {"$ref": "#/$defs/json_value"}}},
+        "wire_body_utf8": {"type": ["string", "null"]}, "deadline_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}, "sdk": {"type": "object", "additionalProperties": false, "required": ["distribution", "version", "source_pin"], "properties": {"distribution": {"const": "typesafe-sdk"}, "version": {"const": "0.7.4"}, "source_pin": {"type": "string", "minLength": 1}}}
+      },
+      "$comment": "Governed inert snapshot of trusted questions/policy and attributed exported state. Wire digest hashes exact SDK serialized body, not this wrapper. No headers/secrets retained."
+    }
+  }
+}

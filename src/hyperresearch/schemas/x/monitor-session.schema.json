@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiwg.io/schemas/hyperresearch-x-monitor-session.v1.json",
+  "title": "Hyperresearch X durable monitor session v1",
+  "$comment": "Atomic checkpoint is authority; SQL is derived. Expiry is anchored, reservations cumulative, unknown execution never releases ownership. Local identity, not publication. Cross-record/time/accounting invariants are checked by the runtime.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "monitor_id", "session_id", "revision", "state", "plan_ref", "approval_refs", "started_at", "expires_at", "accounting", "next_query_index", "query_state", "source_frontier", "analysis_frontier", "deferred_work", "output_refs", "active_operation", "coverage_gaps"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "monitor_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"},
+    "session_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"},
+    "revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"},
+    "state": {"enum": ["running", "stopped", "expired", "blocked", "failed", "completed"]},
+    "plan_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/plan_ref"},
+    "approval_refs": {"type": "array", "items": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_path"}]}},
+    "started_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"},
+    "expires_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"},
+    "accounting": {"$ref": "#/$defs/accounting"},
+    "next_query_index": {"type": "integer", "minimum": 0, "maximum": 99},
+    "query_state": {"type": "array", "items": {"$ref": "#/$defs/query_state"}},
+    "source_frontier": {"$ref": "#/$defs/ref_array"},
+    "analysis_frontier": {"$ref": "#/$defs/ref_array"},
+    "observation_frontier": {"$ref": "#/$defs/ref_array"},
+    "deferred_work": {"type": "array", "items": {"$ref": "#/$defs/deferred_work"}},
+    "output_refs": {"$ref": "#/$defs/ref_array"},
+    "active_operation": {"anyOf": [{"$ref": "#/$defs/active_operation"}, {"type": "null"}]},
+    "coverage_gaps": {"type": "array", "items": {"$ref": "#/$defs/coverage_gap"}},
+    "stopped_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"},
+    "stop_reason": {"type": ["string", "null"]},
+    "policy_refs": {"$ref": "#/$defs/ref_array"},
+    "model_request_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "$comment": "Atomically persisted before SDK admission as an independent billing reservation marker; annotation pending state is not reservation authority. Runtime bounds retained IDs by the immutable session model/source ceilings."},
+    "completed_job_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "$comment": "Semantic overlap deduplication, including terminal known SDK-unavailable jobs, without rebilling. Deferred work stays queued/running/unknown; this set grants no source/model execution authority."},
+    "authority_snapshot_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}
+  },
+  "$defs": {
+    "ref_array": {"type": "array", "items": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}},
+    "accounting": {
+      "type": "object", "additionalProperties": false, "required": ["source", "analysis", "observations"],
+      "properties": {
+        "source": {"type": "object", "additionalProperties": false, "required": ["requests", "pages", "captures", "operations"], "properties": {"requests": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/count_account"}, "pages": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/count_account"}, "captures": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/count_account"}, "operations": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/count_account"}}},
+        "analysis": {"type": "object", "additionalProperties": false, "required": ["requests", "tokens", "cost_usd"], "properties": {"requests": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/count_account"}, "tokens": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/count_account"}, "cost_usd": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/cost_account"}}},
+        "observations": {"type": "object", "additionalProperties": false, "required": ["requests"], "properties": {"requests": {"$ref": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json#/$defs/count_account"}}}
+      }
+    },
+    "query_state": {
+      "type": "object", "additionalProperties": false, "required": ["query_id", "revision", "next_due_at", "last_operation_id", "last_receipt_ref", "last_started_at"],
+      "properties": {"query_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"}, "next_due_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}, "last_operation_id": {"type": ["string", "null"]}, "last_receipt_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "last_started_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"}}
+    },
+    "active_operation": {
+      "type": "object", "additionalProperties": false, "required": ["operation_id", "scope_ref", "receipt_ref", "state", "started_at", "deadline"],
+      "properties": {"operation_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "scope_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "receipt_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "state": {"enum": ["reserved", "running", "unknown", "settled"]}, "started_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}, "deadline": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}}
+    },
+    "deferred_work": {
+      "type": "object", "additionalProperties": false, "required": ["id", "kind", "operation_id", "ref", "state"],
+      "properties": {"id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "kind": {"enum": ["annotation", "observation", "source"]}, "operation_id": {"type": ["string", "null"]}, "ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "state": {"enum": ["queued", "running", "unknown"]}}
+    },
+    "coverage_gap": {
+      "type": "object", "additionalProperties": false, "required": ["scope_id", "query_id", "state", "start", "end", "receipt_ref", "reasons"],
+      "properties": {"scope_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "query_id": {"type": ["string", "null"]}, "state": {"enum": ["partial", "unknown", "error"]}, "start": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"}, "end": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"}, "receipt_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "reasons": {"type": "array", "items": {"type": "string"}}}
+    },
+    "note_evidence_refs": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "capture_refs", "receipt_refs", "annotation_refs", "observation_refs", "analytics_refs", "producer"],
+      "properties": {"schema_version": {"const": 1}, "capture_refs": {"$ref": "#/$defs/ref_array"}, "receipt_refs": {"$ref": "#/$defs/ref_array"}, "annotation_refs": {"$ref": "#/$defs/ref_array"}, "observation_refs": {"$ref": "#/$defs/ref_array"}, "analytics_refs": {"$ref": "#/$defs/ref_array"}, "producer": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/producer"}, "receipt_state": {"enum": ["unknown", "recorded"]}},
+      "allOf": [{"if": {"required": ["receipt_state"], "properties": {"receipt_state": {"const": "recorded"}}}, "then": {"properties": {"receipt_refs": {"type": "array", "minItems": 1}}}}, {"if": {"required": ["receipt_state"], "properties": {"receipt_state": {"const": "unknown"}}}, "then": {"properties": {"receipt_refs": {"type": "array", "maxItems": 0}}}}],
+      "$comment": "NoteMeta is a checked projection, not freeform metadata. Old notes may omit this field entirely; explicit history uses an unknown producer, empty receipt refs and receipt_state unknown."
+    },
+    "record_kind": {"enum": ["source-capture", "source-receipt", "source-capabilities", "monitor-plan", "monitor-session", "analysis-annotation", "verified-observation", "analytics-event"]},
+    "evidence_manifest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "revision", "records"],
+      "properties": {
+        "schema_version": {"const": 1}, "revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"},
+        "records": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["kind", "ref"], "properties": {"kind": {"$ref": "#/$defs/record_kind"}, "ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "artifact_root": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_path"}}}},
+        "operation_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "scope_digest": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/sha256"},
+        "page_refs": {"$ref": "#/$defs/ref_array"}, "capture_refs": {"$ref": "#/$defs/ref_array"}, "receipt_refs": {"$ref": "#/$defs/ref_array"},
+        "materializations": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["capture_ref", "receipt_ref", "note_ref", "state", "index_state"], "properties": {"capture_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "receipt_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}, "note_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "state": {"enum": ["pending", "materialized", "failed"]}, "index_state": {"enum": ["pending", "indexed", "failed", "unknown"]}}}}
+      },
+      "$comment": "Record ref is evidence-root-relative; nested references in unchanged native bytes are relative to artifact_root when present. Root omission means evidence root, not current process directory. materializations.note_ref is an immutable rendered-note support blob under evidence root, never the mutable vault-relative live note path."
+    },
+    "evidence_transport": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "artifacts", "manifests"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "artifacts": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["ref", "content_base64"], "properties": {"ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "content_base64": {"type": "string", "pattern": "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$"}}}},
+        "manifests": {"$ref": "#/$defs/ref_array"}, "manifest_data": {"$ref": "#/$defs/evidence_manifest"}
+      },
+      "$comment": "Checksummed exact raw/canonical bytes and governed manifests; importer rejects corrupt checksums, unsafe paths and unresolved closure before publication."
+    },
+    "authority_snapshot": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "purpose", "trust_store_digest", "trusted_keys", "admitted_grants", "captured_at"],
+      "properties": {"schema_version": {"const": 1}, "purpose": {"const": "x-research-authority-snapshot"}, "trust_store_digest": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/sha256"}, "trusted_keys": {"type": "object", "minProperties": 1, "propertyNames": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "additionalProperties": {"type": "string", "pattern": "^[A-Za-z0-9+/]{43}=(?![\\s\\S])"}}, "admitted_grants": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["approval_id", "grant_digest", "approval_ref"], "properties": {"approval_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "grant_digest": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/sha256"}, "approval_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_path"}]}}}}, "evidence_refs": {"$ref": "#/$defs/ref_array"}, "captured_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}},
+      "$comment": "Public historical trust anchor: authenticate against protected host keys before accepting imported/resumed sessions. evidence_refs may be absent/empty before collection; after actual responses it freezes full immutable input closure, excluding this snapshot itself. A copied source grant does not authenticate fabricated responses. Verified imported RPC facts require full qualified closure and this snapshot's exact byte checksum in protected admitted_snapshot_digests; live origin uses independently supplied owned-observe refs, never record flags. Pure replay freezes public anchor/time with no external calls."
+    },
+    "note_transport": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "notes", "evidence"],
+      "properties": {"schema_version": {"const": 1}, "notes": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["path", "metadata", "body"], "properties": {"path": {"$ref": "#/$defs/note_path"}, "metadata": {"type": "object", "properties": {"x_evidence": {"anyOf": [{"$ref": "#/$defs/note_evidence_refs"}, {"type": "null"}]}}, "additionalProperties": true}, "body": {"type": "string"}}}}, "evidence": {"$ref": "#/$defs/evidence_transport"}},
+      "$comment": "Existing NoteMeta is the native note-metadata authority and is validated separately. This transport explicitly governs x_evidence and opaque body data; zero-note operations retain complete evidence closure."
+    },
+    "monitor_pointer": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "monitor_id", "session_ref", "pid", "updated_at"],
+      "properties": {"schema_version": {"const": 1}, "monitor_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "session_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, "pid": {"type": ["integer", "null"], "minimum": 1, "maximum": 9007199254740991}, "updated_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}},
+      "$comment": "Atomic operational pointer, not a ninth record family. session_ref checksum resolves the canonical monitor-session state authority. Process pid/lock is not native source-lease or Chrome settlement authority."
+    },
+    "monitor_control": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "monitor_id", "requested_at", "reason"],
+      "properties": {"schema_version": {"const": 1}, "monitor_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, "requested_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}, "reason": {"type": "string", "maxLength": 512}},
+      "$comment": "Stop request is inert governed control data. It does not release unknown native ownership or imply source cancellation/settlement."
+    },
+    "note_path": {"type": "string", "minLength": 1, "maxLength": 4096, "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))[^/]+(?:/[^/]+)*(?![\\s\\S])", "not": {"pattern": "[\\\\:\\u0000-\\u001f\\u007f]"}, "$comment": "Existing Unicode note filenames survive transport. No absolute/empty/dot/dotdot components, backslashes, colons or controls; runtime also checks containment and symlinks."}
+  }
+}

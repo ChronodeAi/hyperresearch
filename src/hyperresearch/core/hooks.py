@@ -3709,6 +3709,7 @@ def install_hooks(
         return _run_installers([
             lambda: _install_codex_stop_hook(vault_root, hpr_path),
             lambda: _install_hyperresearch_skill(vault_root, hpr_path),
+            lambda: _install_hyperresearch_x_monitor_skill(vault_root, hpr_path),
             lambda: _install_hyperresearch_step_skills(vault_root, hpr_path),
             *agents,
             lambda: _prune_stale_codex_agents(vault_root),
@@ -3717,6 +3718,7 @@ def install_hooks(
         return _run_installers([
             lambda: _install_omp_extension(vault_root, hpr_path),
             lambda: _install_hyperresearch_skill(vault_root, hpr_path),
+            lambda: _install_hyperresearch_x_monitor_skill(vault_root, hpr_path),
             lambda: _install_hyperresearch_step_skills(vault_root, hpr_path),
             *agents,
             lambda: _prune_stale_omp_agents(vault_root),
@@ -3724,6 +3726,7 @@ def install_hooks(
     return _run_installers([
         lambda: _install_claude_hook(vault_root, hpr_path),
         lambda: _install_hyperresearch_skill(vault_root, hpr_path),
+        lambda: _install_hyperresearch_x_monitor_skill(vault_root, hpr_path),
         lambda: _install_hyperresearch_step_skills(vault_root, hpr_path),
         *agents,
         lambda: _prune_retired_agents(vault_root),
@@ -3780,6 +3783,7 @@ def install_global_hooks(
     if platform == CODEX:
         return _run_installers([
             lambda: _install_hyperresearch_skill(home, hpr_path),
+            lambda: _install_hyperresearch_x_monitor_skill(home, hpr_path, scope="user"),
             *agents,
             lambda: _prune_stale_codex_agents(home),
         ])
@@ -3790,6 +3794,7 @@ def install_global_hooks(
         try:
             return _run_installers([
                 lambda: _install_hyperresearch_skill(home, hpr_path),
+                lambda: _install_hyperresearch_x_monitor_skill(home, hpr_path, scope="user"),
                 *agents,
                 lambda: _install_omp_extension(home, hpr_path),
                 lambda: _prune_stale_omp_agents(home),
@@ -3798,6 +3803,7 @@ def install_global_hooks(
             _OMP_GLOBAL_DIR = None
     return _run_installers([
         lambda: _install_hyperresearch_skill(home, hpr_path),
+        lambda: _install_hyperresearch_x_monitor_skill(home, hpr_path, scope="user"),
         *agents,
         lambda: _prune_retired_agents(home),
         lambda: _prune_global_step_skills(home),
@@ -4507,13 +4513,25 @@ def _install_omp_entry_skill(root: Path, content: str) -> str | None:
     """
     from hyperresearch.core.omp import translate_skill
 
-    text = translate_skill(content, entry=True)
+    text = translate_skill(content, entry=True).replace(
+        "x install-skill --platform codex", "x install-skill --platform omp"
+    )
     dest = _omp_dir("skills", root) / "hyperresearch" / "SKILL.md"
     if dest.exists() and dest.read_text(encoding="utf-8") == text:
         return None
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(text, encoding="utf-8", newline="\n")
     return f"OMP: {_omp_label(dest, root)} (/skill:hyperresearch)"
+
+
+def _install_hyperresearch_x_monitor_skill(root: Path, hpr_path: str, *, scope: str = "project") -> str | None:
+    from hyperresearch.core.x_skills import install_monitor_skill
+
+    result = install_monitor_skill(platform=_platform(), scope=scope, root=root,
+                                   home=root if scope == "user" else None, hpr_path=hpr_path)
+    if result["status"] == "unchanged":
+        return None
+    return f"{_platform()}: {result['path']} (continuous native X monitor)"
 
 
 _HYPERRESEARCH_STEP_SKILLS = [
@@ -4592,7 +4610,9 @@ def _install_hyperresearch_step_skills(
     skills_root = vault_root / ".claude" / "skills"
     skills_root.mkdir(parents=True, exist_ok=True)
 
-    expected = set(_HYPERRESEARCH_STEP_SKILLS)
+    from hyperresearch.core.x_skills import _NAME as monitor_skill_name
+
+    expected = {*_HYPERRESEARCH_STEP_SKILLS, monitor_skill_name}
     installed: list[str] = []
     pruned: list[str] = []
 

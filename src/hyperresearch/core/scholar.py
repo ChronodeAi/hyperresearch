@@ -480,11 +480,14 @@ def score_sources(
             fm.is_retracted = is_retracted
             note_path.write_text(render_note(fm, body), encoding="utf-8")
 
+        # Finish this note before the next network lookup or rate-limit wait;
+        # keeping its write transaction open blocks concurrent vault syncs.
+        conn.commit()
+
         scored += 1
         if is_retracted:
             retracted.append(row["id"])
 
-    conn.commit()
     authority_ranked = compute_authority_scores(conn)
     compute_quality_scores(conn, vault.config.ranking)
 

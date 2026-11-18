@@ -98,6 +98,9 @@ class ParallelProvider:
 
     def fetch(self, url: str) -> WebResult:
         """Fetch one URL as clean Markdown."""
+        from hyperresearch.web.base import require_article_url
+
+        require_article_url(url)
         payload = self._call_tool(
             "web_fetch",
             {

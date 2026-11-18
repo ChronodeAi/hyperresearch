@@ -126,10 +126,38 @@ def resolve(
     status: str,
     note_id: str | None = None,
     detail: str | None = None,
+    *,
+    vault=None,
 ) -> dict:
     """Move an item to a terminal (or needs_human) state."""
     if status not in ("fetched", "needs_human", "abandoned", "queued"):
         raise EscalationError(f"invalid resolution '{status}'")
+    if status == "fetched":
+        item = conn.execute("SELECT url FROM escalations WHERE id=?", (item_id,)).fetchone()
+        from hyperresearch.core.x_projection import is_x_url
+
+        if item and is_x_url(item["url"]):
+            if vault is None or note_id is None:
+                raise EscalationError("Native X resolution requires a vault and a recoverably indexed note")
+            from hyperresearch.core.note import read_note
+            from hyperresearch.core.x_evidence import EvidenceStore
+
+            row = conn.execute("SELECT path FROM notes WHERE id=?", (note_id,)).fetchone()
+            if row is None:
+                raise EscalationError("Native X note is not indexed")
+            note = read_note(vault.root / row["path"], vault.root)
+            if not note.meta.x_evidence or not note.meta.x_evidence["receipt_refs"]:
+                raise EscalationError("Native X note has no recorded source receipt")
+            from urllib.parse import urlsplit
+
+            store = EvidenceStore(vault.root)
+            store.validate_note_refs(note.meta.x_evidence)
+            post_id = urlsplit(item["url"]).path.split("/status/")[-1].split("/")[0]
+            if not post_id.isdecimal() or not any(
+                store.get_record(ref, "source-capture")["post_id"] == post_id
+                for ref in note.meta.x_evidence["capture_refs"]
+            ):
+                raise EscalationError("Native X note does not cover the queued public post")
     cur = conn.execute(
         """UPDATE escalations
            SET status = ?, note_id = COALESCE(?, note_id),

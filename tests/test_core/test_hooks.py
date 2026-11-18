@@ -502,12 +502,13 @@ def test_install_hooks_registers_full_hyperresearch_roster(tmp_vault):
 
 
 def test_install_hooks_second_run_is_noop(tmp_vault):
-    first = install_hooks(tmp_vault.root, "hyperresearch")
-    assert first
-    second = install_hooks(tmp_vault.root, "hyperresearch")
-    # Hook installer may still report the hook is already installed → no
-    # actions or a trivial subset. Must not crash, must not reinstall files.
-    assert not second or all("pruned" not in a.lower() for a in second)
+    install_hooks(tmp_vault.root, "hyperresearch")
+    monitor = tmp_vault.root / ".claude" / "skills" / "hyperresearch-x-monitor" / "SKILL.md"
+    before = monitor.read_bytes()
+    mtime = monitor.stat().st_mtime_ns
+    install_hooks(tmp_vault.root, "hyperresearch")
+    assert monitor.read_bytes() == before
+    assert monitor.stat().st_mtime_ns == mtime
 
 
 # ---------------------------------------------------------------------------

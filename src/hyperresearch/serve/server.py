@@ -470,7 +470,9 @@ class HyperresearchHandler(BaseHTTPRequestHandler):
             (note_id,),
         ).fetchall()
 
-        html_body = render_markdown(row["body"])
+        from hyperresearch.core.x_projection import note_evidence_projection
+        evidence = note_evidence_projection(row)
+        html_body = render_markdown(row["body"], inert="x_evidence" in evidence)
         tags_html = " ".join(f'<a href="/tag/{html_mod.escape(t)}" class="tag">{html_mod.escape(t)}</a>' for t in tags)
         status_class = row["status"]
         meta = (
@@ -480,6 +482,12 @@ class HyperresearchHandler(BaseHTTPRequestHandler):
             f'<span>{row["word_count"]} words</span>'
             f'</div>'
         )
+        if evidence:
+            meta += (
+                '<details class="evidence"><summary>Source provenance and evidence references</summary><pre>'
+                + html_mod.escape(json.dumps(evidence, indent=2, ensure_ascii=False))
+                + "</pre></details>"
+            )
         bl_html = ""
         if backlinks:
             bl_items = "\n".join(
@@ -560,7 +568,7 @@ class HyperresearchHandler(BaseHTTPRequestHandler):
 
     def _serve_graph_api(self):
         nodes_rows = self.db.execute(
-            "SELECT n.id, n.title, n.status, n.word_count FROM notes n WHERE n.type NOT IN ('index')"
+            "SELECT n.id,n.title,n.status,n.word_count,n.source,n.x_evidence,n.fetch_provider,n.fetch_route,n.source_domain,n.fetched_at FROM notes n WHERE n.type NOT IN ('index')"
         ).fetchall()
         inbound_counts = {}
         for r in self.db.execute(
@@ -568,9 +576,10 @@ class HyperresearchHandler(BaseHTTPRequestHandler):
         ):
             inbound_counts[r["target_id"]] = r["c"]
 
+        from hyperresearch.core.x_projection import note_evidence_projection
         nodes = [
             {"id": r["id"], "title": r["title"], "status": r["status"],
-             "words": r["word_count"], "inbound": inbound_counts.get(r["id"], 0)}
+             "words": r["word_count"], "inbound": inbound_counts.get(r["id"], 0), **note_evidence_projection(r)}
             for r in nodes_rows
         ]
         edges_rows = self.db.execute(

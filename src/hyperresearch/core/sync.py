@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import sqlite3
 import time
@@ -93,7 +94,7 @@ def compute_sync_plan(vault, force: bool = False) -> SyncPlan:
             continue
         # Skip per-run workspaces entirely (research/runs/<vault_tag>/**) —
         # run-scoped pipeline artifacts are never vault notes.
-        if runs_dir in md_file.parents:
+        if runs_dir in md_file.parents or kb_dir / "evidence" in md_file.parents:
             continue
         # Skip scratch artifacts without YAML frontmatter.
         if not _has_frontmatter(md_file):
@@ -135,6 +136,9 @@ def execute_sync(vault, plan: SyncPlan) -> SyncResult:
     """Execute the sync plan within a single transaction for atomicity."""
     result = SyncResult(unchanged=plan.unchanged)
     start = time.monotonic()
+    from hyperresearch.core.x_evidence import EvidenceStore
+
+    evidence_store = EvidenceStore(vault.root)
     now_iso = datetime.now(UTC).isoformat()
 
     conn = vault.db
@@ -156,6 +160,7 @@ def execute_sync(vault, plan: SyncPlan) -> SyncResult:
 
     def _upsert_with_collision_check(file_path: Path) -> str | None:
         note = read_note(file_path, vault.root)
+        evidence_store.validate_note_refs(note.meta.x_evidence)
         rel = file_path.relative_to(vault.root).as_posix()
         existing = id_to_path.get(note.meta.id)
         if existing is not None and existing != rel:
@@ -167,7 +172,14 @@ def execute_sync(vault, plan: SyncPlan) -> SyncResult:
                 ),
             })
             return None
-        _upsert_note_to_db(conn, note, now_iso, file_mtime=file_path.stat().st_mtime)
+        conn.execute("SAVEPOINT note_projection")
+        try:
+            _upsert_note_to_db(conn, note, now_iso, file_mtime=file_path.stat().st_mtime)
+        except Exception:
+            conn.execute("ROLLBACK TO note_projection")
+            raise
+        finally:
+            conn.execute("RELEASE note_projection")
         id_to_path[note.meta.id] = rel
         changed_ids.add(note.meta.id)
         return note.meta.id
@@ -203,6 +215,8 @@ def execute_sync(vault, plan: SyncPlan) -> SyncResult:
         # Resolve links — only for changed notes' outgoing + incoming
         _resolve_links_incremental(conn, changed_ids)
 
+        evidence_result = evidence_store.rebuild_projection(conn)
+        result.errors.extend(evidence_result["errors"])
         # Record sync timestamp
         conn.execute(
             "INSERT OR REPLACE INTO _meta (key, value) VALUES ('last_sync', ?)",
@@ -272,6 +286,25 @@ def _upsert_note_to_db(conn, note, synced_at: str, file_mtime: float = 0) -> Non
             meta.oa_recovery_kind,
         ),
     )
+    # Every declared metadata field is preserved, not just a handwritten subset.
+    conn.execute(
+        """UPDATE notes SET x_evidence=?,fetch_route=?,fetch_provider=?,source_domain=?,
+                            fetched_at=?,metadata_json=? WHERE id=?""",
+        (json.dumps(meta.x_evidence) if meta.x_evidence is not None else None,
+         meta.fetch_route, meta.fetch_provider, meta.source_domain,
+         meta.fetched_at.isoformat() if meta.fetched_at else None,
+         meta.model_dump_json(), meta.id),
+    )
+    if meta.source and meta.fetched_at and meta.fetch_provider:
+        conn.execute(
+            """INSERT INTO sources(url,note_id,domain,fetched_at,provider,content_hash)
+               VALUES (?,?,?,?,?,?) ON CONFLICT(url) DO UPDATE SET
+                 note_id=excluded.note_id,domain=excluded.domain,fetched_at=excluded.fetched_at,
+                 provider=excluded.provider,content_hash=excluded.content_hash
+               WHERE sources.note_id IS NULL OR sources.note_id=excluded.note_id""",
+            (meta.source, meta.id, meta.source_domain, meta.fetched_at.isoformat(),
+             meta.fetch_provider, note.content_hash),
+        )
 
     # Update tags — resolve aliases before writing
     conn.execute("DELETE FROM tags WHERE note_id = ?", (meta.id,))

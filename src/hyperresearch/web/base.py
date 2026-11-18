@@ -22,6 +22,21 @@ DEFAULT_GATES = JunkGates()
 SERVED_BY_KEY = "served_by"
 
 
+def native_capture_is_valid(result) -> bool:
+    """A governed native capture, not a provider marker, bypasses article heuristics."""
+    capture = result.metadata.get("x_capture")
+    if capture is None:
+        return False
+    from hyperresearch.models.x_evidence import validate_record
+
+    try:
+        validated = validate_record("source-capture", capture)
+        refs = validate_record("note-evidence-refs", result.metadata.get("x_evidence"))
+    except (ValueError, TypeError):
+        return False
+    return bool(refs["capture_refs"]) and validated["text"] == result.content and validated["url"] == result.url
+
+
 def is_binary_garbage_char(c: str) -> bool:
     """True if `c` indicates binary or mis-decoded content rather than real text.
 
@@ -80,6 +95,8 @@ class WebResult:
 
     def looks_like_login_wall(self, original_url: str, gates: JunkGates | None = None) -> bool:
         """Check if the result appears to be a login/signup redirect rather than real content."""
+        if native_capture_is_valid(self):
+            return False
         gates = gates or DEFAULT_GATES
         login_signals = (
             "sign in", "sign up", "log in", "login", "create account",
@@ -113,6 +130,8 @@ class WebResult:
         Returns a reason string if junk, None if OK.
         """
         gates = gates or DEFAULT_GATES
+        if native_capture_is_valid(self):
+            return None
         content = self.content or ""
         title_lower = (self.title or "").lower()
         content_lower = content[: gates.sample_window].lower()
@@ -188,7 +207,7 @@ class WebProvider(Protocol):
         ...
 
 
-def get_provider(
+def _article_provider(
     name: str | None = None,
     profile: str | None = None,
     magic: bool = False,
@@ -262,3 +281,32 @@ def get_provider(
 def served_by(provider: WebProvider, result: WebResult) -> str:
     """Name of the provider that produced ``result``, for `fetch_provider` provenance."""
     return result.metadata.get(SERVED_BY_KEY) or provider.name
+
+
+def get_provider(
+    name: str | None = None,
+    profile: str | None = None,
+    magic: bool = False,
+    headless: bool = True,
+    settings: FetchSettings | None = None,
+    gates: JunkGates | None = None,
+    *,
+    vault=None,
+) -> WebProvider:
+    """Exact-host native intake when a vault is supplied, with no X reader fallback."""
+    if vault is not None:
+        from hyperresearch.web.opencli_provider import XDispatchProvider
+
+        return XDispatchProvider(vault, name or "builtin", lambda: _article_provider(
+            name, profile, magic, headless, settings, gates,
+        ))
+    return _article_provider(name, profile, magic, headless, settings, gates)
+
+
+def require_article_url(url: str) -> None:
+    """Direct reader clients have no governed X source scope and must refuse it."""
+    from hyperresearch.core.x_projection import is_x_url
+    from hyperresearch.web.opencli_provider import NativeSourceError
+
+    if is_x_url(url):
+        raise NativeSourceError("Public X posts require a configured governed native source", "X_SOURCE_POLICY")

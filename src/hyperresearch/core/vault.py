@@ -55,6 +55,7 @@ class Vault:
         self.db_path = self.hyperresearch_dir / DB_FILE
         self._conn: sqlite3.Connection | None = None
         self._config: VaultConfig | None = None
+        self.sync_errors: list[dict] = []
 
     @property
     def config(self) -> VaultConfig:
@@ -70,6 +71,15 @@ class Vault:
             # any pending migrations. This fires on every vault open, which is
             # cheap when there's nothing to migrate.
             init_schema(self._conn)
+            from hyperresearch.core.x_evidence import EvidenceStore
+
+            projection = EvidenceStore(self.root).rebuild_projection(self._conn)
+            self.sync_errors = projection["errors"]
+            self._conn.commit()
+            if self.sync_errors:
+                self._conn.close()
+                self._conn = None
+                raise VaultError(f"Canonical X evidence rebuild failed: {self.sync_errors}")
         return self._conn
 
     @property
@@ -111,6 +121,11 @@ class Vault:
         stay global (research/notes/). NOT synced as notes.
         """
         return self.research_dir / "runs"
+
+    @property
+    def evidence_dir(self) -> Path:
+        """Canonical evidence lives under the configured research directory."""
+        return self.research_dir / "evidence" / "x"
 
     def run_dir(self, vault_tag: str) -> Path:
         return self.runs_dir / validate_run_tag(vault_tag)
@@ -217,5 +232,5 @@ class Vault:
         from hyperresearch.core.sync import compute_sync_plan, execute_sync
 
         plan = compute_sync_plan(self)
-        if plan.to_add or plan.to_update or plan.to_delete:
-            execute_sync(self, plan)
+        result = execute_sync(self, plan)
+        self.sync_errors = result.errors

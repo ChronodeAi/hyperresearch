@@ -1,0 +1,1 @@
+{"endpoint":"https://model.example.test/system-one","expires_at":"2026-10-10T00:30:00Z","max_cost_usd":"0.01","max_options_per_question":20,"max_questions":10,"max_request_bytes":100000,"max_tokens":1000,"model_ids":["fixture-model"],"provider":"fixture-typesafe","schema_version":1}

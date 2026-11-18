@@ -7,6 +7,10 @@ import sqlite3
 from urllib.parse import urlparse
 
 
+class DuplicateURL(ValueError):
+    """Only an existing live source note is a duplicate, never schema or policy refusal."""
+
+
 def existing_live_note_for_url(conn: sqlite3.Connection, url: str) -> sqlite3.Row | None:
     """Return the ``sources`` row for ``url`` only if it still points at a live note.
 
@@ -76,7 +80,7 @@ def fetch_and_save(
     # Check if URL already fetched (an orphaned row — note deleted — is not a duplicate)
     existing = existing_live_note_for_url(conn, url)
     if existing:
-        raise ValueError(f"URL already fetched as note '{existing['note_id']}'")
+        raise DuplicateURL(f"URL already fetched as note '{existing['note_id']}'")
 
     # Auto-visible for sites that kill headless sessions on first contact
     if not visible and vault.config.web_profile:
@@ -94,7 +98,9 @@ def fetch_and_save(
         headless=not visible,
         settings=vault.config.fetch,
         gates=vault.config.junk,
+        vault=vault,
     )
+    # Supplying the vault is required for exact-host native dispatch.
 
     result = prov.fetch(url)
 
@@ -141,12 +147,15 @@ def fetch_and_save(
         "fetched_at": result.fetched_at.isoformat(),
         "fetch_provider": served_by(prov, result),
     }
+    extra_meta["fetch_route"] = prov.name
+    if result.metadata.get("x_evidence") is not None:
+        extra_meta["x_evidence"] = result.metadata["x_evidence"]
     if result.metadata.get("author"):
         extra_meta["author"] = result.metadata["author"]
 
     from hyperresearch.core.scholar import extract_doi
 
-    detected_doi = extract_doi(url, result.raw_html, result.content)
+    detected_doi = None if extra_meta.get("x_evidence") else extract_doi(url, result.raw_html, result.content)
     if detected_doi:
         extra_meta["doi"] = detected_doi
 
@@ -199,7 +208,9 @@ def fetch_and_save(
     note_id = note_path.stem
     plan = compute_sync_plan(vault)
     if plan.to_add or plan.to_update:
-        execute_sync(vault, plan)
+        sync_result = execute_sync(vault, plan)
+        if sync_result.errors:
+            raise RuntimeError(f"Note is durable but index projection failed: {sync_result.errors}")
 
     # Record source (upsert: an orphaned row for this url may already exist)
     content_hash = hashlib.sha256(result.content.encode("utf-8")).hexdigest()[:16]
@@ -213,7 +224,7 @@ def fetch_and_save(
                provider = excluded.provider,
                content_hash = excluded.content_hash,
                status = 'active'""",
-        (url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash),
+        (url, note_id, domain, result.fetched_at.isoformat(), served_by(prov, result), content_hash),
     )
     conn.commit()
 
@@ -235,7 +246,10 @@ def fetch_and_save(
         "title": note_title,
         "url": url,
         "domain": domain,
-        "provider": prov.name,
+        "provider": served_by(prov, result),
+        "fetch_route": prov.name,
+        "x_evidence": extra_meta.get("x_evidence"),
+        "source_outcome": result.metadata.get("x_operation"),
         "path": str(note_path.relative_to(vault.root)),
         "word_count": len(result.content.split()),
         "assets": saved_assets,

@@ -1,0 +1,264 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+  "title": "OpenCLI X source receipt v1",
+  "$comment": "Local catalog identity, not a publication claim. A page commit is durable evidence, never final settlement or execution authority. OpenCLI owns this authority and its request definitions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "kind", "receipt_id", "operation_id", "scope", "producer", "execution", "coverage", "durability", "counters", "artifacts", "frontier", "page", "stop_reason", "errors", "continuation"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "kind": {"enum": ["page-commit", "final-outcome"]},
+    "receipt_id": {"$ref": "#/$defs/identifier"},
+    "operation_id": {"$ref": "#/$defs/identifier"},
+    "scope": {"$ref": "#/$defs/source_scope"},
+    "producer": {"$ref": "#/$defs/producer"},
+    "execution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "started_at", "settled_at", "reason"],
+      "properties": {
+        "state": {"enum": ["not-started", "running", "settled", "unknown", "aborted"]},
+        "started_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "settled_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "reason": {"type": ["string", "null"]}
+      },
+      "allOf": [
+        {"if": {"properties": {"state": {"enum": ["settled", "aborted"]}}}, "then": {"properties": {"settled_at": {"$ref": "#/$defs/timestamp"}}}},
+        {"if": {"properties": {"state": {"enum": ["running", "unknown", "not-started"]}}}, "then": {"properties": {"settled_at": {"type": "null"}}}}
+      ]
+    },
+    "coverage": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "interval_start", "interval_end", "boundary_proven", "reasons"],
+      "properties": {
+        "state": {"enum": ["complete", "partial", "unknown", "not-started"]},
+        "interval_start": {"$ref": "#/$defs/nullable_timestamp"},
+        "interval_end": {"$ref": "#/$defs/nullable_timestamp"},
+        "boundary_proven": {"type": "boolean"},
+        "reasons": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "durability": {
+      "type": "object", "additionalProperties": false,
+      "required": ["state", "committed_pages", "capture_count"],
+      "properties": {
+        "state": {"enum": ["committed", "partial", "none", "unknown"]},
+        "committed_pages": {"$ref": "#/$defs/count"},
+        "capture_count": {"$ref": "#/$defs/count"}
+      }
+    },
+    "counters": {
+      "type": "object", "additionalProperties": false,
+      "required": ["page_count", "capture_count", "request_count", "context_count", "duplicate_count"],
+      "properties": {
+        "page_count": {"$ref": "#/$defs/nullable_count"},
+        "capture_count": {"$ref": "#/$defs/nullable_count"},
+        "request_count": {"$ref": "#/$defs/nullable_count"},
+        "context_count": {"$ref": "#/$defs/nullable_count"},
+        "primary_count": {"$ref": "#/$defs/nullable_count"},
+        "duplicate_count": {"$ref": "#/$defs/nullable_count"}
+      }
+    },
+    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact_ref"}},
+    "frontier": {"$ref": "#/$defs/frontier"},
+    "page": {"anyOf": [{"$ref": "#/$defs/page_descriptor"}, {"type": "null"}]},
+    "stop_reason": {"enum": ["page-committed", "exhausted", "page-cap", "capture-cap", "request-cap", "context-cap", "deadline", "aborted", "executor-error", "graphql-error", "unknown", "not-started"]},
+    "errors": {"type": "array", "items": {"$ref": "#/$defs/safe_error"}},
+    "continuation": {"$ref": "#/$defs/continuation"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"kind": {"const": "page-commit"}}},
+      "then": {"properties": {
+        "page": {"$ref": "#/$defs/page_descriptor"},
+        "execution": {"type": "object", "properties": {"state": {"enum": ["running", "unknown"]}}},
+        "durability": {"type": "object", "properties": {"state": {"const": "committed"}, "committed_pages": {"type": "integer", "minimum": 1}}},
+        "coverage": {"type": "object", "properties": {"state": {"enum": ["partial", "unknown"]}}},
+        "stop_reason": {"const": "page-committed"}
+      }}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "final-outcome"}}},
+      "then": {"properties": {
+        "page": {"type": "null"},
+        "execution": {"type": "object", "properties": {"state": {"enum": ["not-started", "settled", "unknown", "aborted"]}}},
+        "stop_reason": {"not": {"const": "page-committed"}}
+      }}
+    },
+    {
+      "if": {"properties": {"coverage": {"type": "object", "properties": {"state": {"const": "complete"}}}}},
+      "then": {"properties": {
+        "kind": {"const": "final-outcome"},
+        "execution": {"type": "object", "properties": {"state": {"const": "settled"}}},
+        "coverage": {"type": "object", "properties": {"boundary_proven": {"const": true}}},
+        "stop_reason": {"const": "exhausted"}
+      }}
+    }
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*(?![\\s\\S])"},
+    "count": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "nullable_count": {"anyOf": [{"$ref": "#/$defs/count"}, {"type": "null"}]},
+    "revision": {"type": "integer", "minimum": 1, "maximum": 2147483647},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "Z(?![\\s\\S])"},
+    "nullable_timestamp": {"anyOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+    "post_id": {"type": "string", "pattern": "^[1-9][0-9]{0,24}(?![\\s\\S])"},
+    "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}(?![\\s\\S])"},
+    "decimal": {"type": "string", "pattern": "^-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?![\\s\\S])"},
+    "nonnegative_decimal": {"type": "string", "pattern": "^(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?![\\s\\S])"},
+    "artifact_path": {
+      "type": "string", "minLength": 1, "maxLength": 4096,
+      "pattern": "^[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*(?:/[A-Za-z0-9_-]+(?:\\.[A-Za-z0-9_-]+)*)*(?![\\s\\S])",
+      "$comment": "Relative POSIX path only: no absolute paths, dot components, hidden components, escaping, percent encodings or executable URI schemes. Runtime also checks symlinks/containment and checksum."
+    },
+    "artifact_ref": {
+      "type": "object", "additionalProperties": false, "required": ["path", "sha256"],
+      "properties": {
+        "path": {"$ref": "#/$defs/artifact_path"},
+        "sha256": {"$ref": "#/$defs/sha256"},
+        "schema_id": {"enum": ["https://aiwg.io/schemas/opencli-x-source-capture.v1.json", "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json", "https://aiwg.io/schemas/opencli-x-source-capabilities.v1.json", "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json", "https://aiwg.io/schemas/hyperresearch-x-monitor-session.v1.json", "https://aiwg.io/schemas/hyperresearch-x-analysis-annotation.v1.json", "https://aiwg.io/schemas/hyperresearch-x-verified-observation.v1.json", "https://aiwg.io/schemas/hyperresearch-x-analytics-event.v1.json"]},
+        "record_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "producer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["product", "version", "runtime", "extension_version", "owner", "profile"],
+      "properties": {
+        "product": {"type": "string", "minLength": 1},
+        "version": {"type": ["string", "null"]},
+        "runtime": {"type": ["string", "null"]},
+        "extension_version": {"type": ["string", "null"]},
+        "owner": {"type": ["string", "null"]},
+        "profile": {"type": ["string", "null"]},
+        "adapter": {"type": ["string", "null"]},
+        "effective_operations": {
+          "type": "array", "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["operation_name", "query_id", "features", "field_toggles", "metadata_source"],
+            "properties": {
+              "operation_name": {"type": "string", "minLength": 1},
+              "query_id": {"type": ["string", "null"]},
+              "features": {"type": "object", "additionalProperties": {"type": "boolean"}},
+              "field_toggles": {"type": "object", "additionalProperties": {"type": "boolean"}},
+              "metadata_source": {"enum": ["local-bundle", "bundled-fallback", "unknown"]}
+            }
+          }
+        }
+      }
+    },
+    "plan_ref": {
+      "type": "object", "additionalProperties": false, "required": ["plan_id", "revision", "digest"],
+      "properties": {"plan_id": {"$ref": "#/$defs/identifier"}, "revision": {"$ref": "#/$defs/revision"}, "digest": {"$ref": "#/$defs/sha256"}, "artifact_ref": {"$ref": "#/$defs/artifact_ref"}}
+    },
+    "query_ref": {
+      "type": "object", "additionalProperties": false, "required": ["query_id", "revision"],
+      "properties": {"query_id": {"$ref": "#/$defs/identifier"}, "revision": {"$ref": "#/$defs/revision"}}
+    },
+    "source_limits": {
+      "type": "object", "additionalProperties": false,
+      "required": ["max_pages", "max_captures", "max_requests", "max_elapsed_s", "max_context"],
+      "properties": {
+        "max_pages": {"type": "integer", "minimum": 1, "maximum": 10000},
+        "max_captures": {"type": "integer", "minimum": 0, "maximum": 1000000},
+        "max_requests": {"type": "integer", "minimum": 1, "maximum": 100000},
+        "max_elapsed_s": {"type": "integer", "minimum": 1, "maximum": 86400},
+        "max_context": {"type": "integer", "minimum": 0, "maximum": 100000},
+        "max_primary": {"type": "integer", "minimum": 0, "maximum": 1000000}
+      }
+    },
+    "source_scope": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "operation_id", "scope_id", "operation", "plan_ref", "query_ref", "owner", "profile", "allowed_hosts", "product", "expression", "target", "started_at", "deadline", "limits"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "operation_id": {"$ref": "#/$defs/identifier"},
+        "scope_id": {"$ref": "#/$defs/identifier"},
+        "operation": {"enum": ["search", "post", "thread", "user-timeline", "collection"]},
+        "plan_ref": {"anyOf": [{"$ref": "#/$defs/plan_ref"}, {"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "query_ref": {"anyOf": [{"$ref": "#/$defs/query_ref"}, {"type": "null"}]},
+        "approval_ref": {"$ref": "#/$defs/artifact_path"},
+        "owner": {"type": "string", "minLength": 1},
+        "profile": {"type": "string", "minLength": 1},
+        "allowed_hosts": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["x.com", "www.x.com", "twitter.com", "www.twitter.com"]}},
+        "product": {"enum": ["Latest", null]},
+        "expression": {"type": ["string", "null"], "minLength": 1, "maxLength": 4096},
+        "target": {"type": ["string", "null"], "minLength": 1, "maxLength": 2048},
+        "started_at": {"$ref": "#/$defs/timestamp"},
+        "deadline": {"$ref": "#/$defs/timestamp"},
+        "interval_start": {"$ref": "#/$defs/timestamp"},
+        "interval_end": {"$ref": "#/$defs/timestamp"},
+        "until": {"$ref": "#/$defs/timestamp"},
+        "limits": {"$ref": "#/$defs/source_limits"}
+      },
+      "allOf": [
+        {"if": {"properties": {"operation": {"const": "search"}}}, "then": {"properties": {"product": {"const": "Latest"}, "expression": {"type": "string"}, "target": {"type": "null"}}}, "else": {"properties": {"product": {"type": "null"}, "expression": {"type": "null"}, "target": {"type": "string"}}}}
+      ],
+      "$comment": "Governed input, not an authority grant. Caller verifies operation identity, owner, plan/query revisions, time order and independent budgets before dispatch/resume. Latest compiles to native product live."
+    },
+    "frontier": {
+      "type": "object", "additionalProperties": false,
+      "required": ["page_ordinal", "cursor", "last_post_id", "captured_at"],
+      "properties": {
+        "page_ordinal": {"$ref": "#/$defs/nullable_count"},
+        "cursor": {"type": ["string", "null"]},
+        "last_post_id": {"anyOf": [{"$ref": "#/$defs/post_id"}, {"type": "null"}]},
+        "captured_at": {"$ref": "#/$defs/nullable_timestamp"},
+        "seen_cursors": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "branches": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["branch_id", "cursor", "seen_cursors"],
+          "properties": {"branch_id": {"$ref": "#/$defs/identifier"}, "cursor": {"type": ["string", "null"]}, "seen_cursors": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}}
+        }},
+        "suffix_ref": {"$ref": "#/$defs/artifact_ref"}
+      }
+    },
+    "page_descriptor": {
+      "type": "object", "additionalProperties": false, "required": ["ordinal", "raw_ref", "capture_refs", "previous_receipt_ref"],
+      "properties": {
+        "ordinal": {"$ref": "#/$defs/count"},
+        "raw_ref": {"$ref": "#/$defs/artifact_ref"},
+        "capture_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_ref"}},
+        "previous_receipt_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]},
+        "suffix_ref": {"$ref": "#/$defs/artifact_ref"}
+      }
+    },
+    "safe_error": {
+      "type": "object", "additionalProperties": false, "required": ["stage", "code", "message", "retryable"],
+      "properties": {"stage": {"type": "string", "minLength": 1}, "code": {"type": "string", "minLength": 1}, "message": {"type": "string", "maxLength": 4096}, "retryable": {"type": "boolean"}},
+      "$comment": "Producer must redact secrets. No request headers, cookies, private payloads or stacks are declared fields."
+    },
+    "continuation": {
+      "type": "object", "additionalProperties": false, "required": ["state", "cursor", "scope_digest", "producer_digest", "frontier", "reason"],
+      "properties": {
+        "state": {"enum": ["available", "unavailable", "unknown"]},
+        "cursor": {"type": ["string", "null"]},
+        "scope_digest": {"$ref": "#/$defs/sha256"},
+        "producer_digest": {"$ref": "#/$defs/sha256"},
+        "frontier": {"$ref": "#/$defs/frontier"},
+        "reason": {"type": ["string", "null"]}
+      }
+    },
+    "operation_manifest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "operation_id", "scope", "producer", "page_receipt_refs", "final_receipt_ref"],
+      "properties": {
+        "schema_version": {"const": 1}, "operation_id": {"$ref": "#/$defs/identifier"}, "scope": {"$ref": "#/$defs/source_scope"}, "producer": {"$ref": "#/$defs/producer"},
+        "page_receipt_refs": {"type": "array", "items": {"$ref": "#/$defs/artifact_ref"}},
+        "final_receipt_ref": {"anyOf": [{"$ref": "#/$defs/artifact_ref"}, {"type": "null"}]}
+      }
+    },
+    "native_owner_journal": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "leases", "approvals"],
+      "properties": {
+        "schema_version": {"const": 1},
+        "leases": {"type": "array", "items": {
+          "type": "object", "additionalProperties": false, "required": ["key", "run_id", "command", "pid", "started_at_ms", "last_seen_at_ms", "settlement_required", "unresolved", "unknown"],
+          "properties": {"key": {"type": "string", "minLength": 1}, "run_id": {"$ref": "#/$defs/identifier"}, "command": {"type": "string"}, "pid": {"type": ["integer", "null"], "minimum": 1}, "started_at_ms": {"$ref": "#/$defs/count"}, "last_seen_at_ms": {"$ref": "#/$defs/count"}, "deadline_at_ms": {"$ref": "#/$defs/count"}, "settlement_required": {"const": true}, "unresolved": {"type": "array", "items": {"type": "string"}}, "unknown": {"type": "array", "items": {"type": "string"}}, "release_requested": {"type": "boolean"}}
+        }},
+        "approvals": {"type": "object", "propertyNames": {"$ref": "#/$defs/identifier"}, "additionalProperties": {
+          "type": "object", "additionalProperties": false, "required": ["operation_ids", "request_ids", "source_polls", "source_requests", "source_pages", "total_captures", "started_at_ms"],
+          "properties": {"operation_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}, "request_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}, "source_polls": {"$ref": "#/$defs/count"}, "source_requests": {"$ref": "#/$defs/count"}, "source_pages": {"$ref": "#/$defs/count"}, "total_captures": {"$ref": "#/$defs/count"}, "started_at_ms": {"$ref": "#/$defs/count"}, "operation_scopes": {"type": "object", "propertyNames": {"$ref": "#/$defs/identifier"}, "additionalProperties": {"$ref": "#/$defs/sha256"}}}
+        }}
+      },
+      "$comment": "Native durable ownership and cumulative grant reservations. command is an inert label, not executable input. deadline_at_ms is the original immutable operation deadline: elapsed deadline permits idle reclamation only after every dispatched command has exact settled/aborted proof. Unknown/unresolved ownership survives restart/TTL/empty queues; operation_scopes prevents changed-scope reuse."
+    }
+  }
+}

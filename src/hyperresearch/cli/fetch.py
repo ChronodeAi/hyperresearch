@@ -306,6 +306,7 @@ def fetch(
         headless=not visible,
         settings=vault.config.fetch,
         gates=vault.config.junk,
+        vault=vault,
     )
     if not json_output:
         console.print(f"[dim]Fetching with {prov.name}...[/]")
@@ -332,6 +333,10 @@ def fetch(
         # URL and meta tags only — never the blocked page's body text, which on
         # a captcha or error page carries no DOI worth trusting.
         doi = extract_doi(url, raw_html, None)
+        from hyperresearch.core.x_projection import is_x_url
+
+        if is_x_url(url):
+            return None
         rescued, loc = rescue_full_text(vault, prov, url, doi)
         if rescued is None:
             return None
@@ -347,6 +352,19 @@ def fetch(
     try:
         result = prov.fetch(url)
     except Exception as e:
+        from hyperresearch.web.opencli_provider import NativeSourceError
+
+        if isinstance(e, NativeSourceError):
+            envelope = error(str(e), e.code, vault=str(vault.root))
+            envelope.data = e.result
+            if json_output:
+                output(envelope, json_mode=True)
+            else:
+                from hyperresearch.core.x_projection import terminal_text
+                from rich.markup import escape
+
+                console.print(f"[red]Native X outcome:[/] {escape(terminal_text(str(e)))}")
+            raise typer.Exit(1)
         result = _rescue(f"fetch failed: {e}", None)
         if result is None:
             if json_output:
@@ -406,8 +424,8 @@ def fetch(
     # Source-ranking capture: DOI/arXiv id + the orchestrator's utility score.
     # On a rescue, the DOI we resolved with is the authority — re-extracting
     # would read it out of the substitute's body instead.
-    detected_doi = rescue_doi if oa_location is not None else extract_doi(
-        url, result.raw_html, result.content
+    detected_doi = None if result.metadata.get("x_evidence") else (
+        rescue_doi if oa_location is not None else extract_doi(url, result.raw_html, result.content)
     )
 
     # Open-access recovery: a paywalled paper arrives as an abstract, so when a
@@ -421,7 +439,7 @@ def fetch(
     )
     original_chars = len(result.content or "")
 
-    if oa_location is None:
+    if oa_location is None and not result.metadata.get("x_evidence"):
         result, oa_location = recover_full_text(vault, prov, url, detected_doi, result)
     else:
         # Rescued above. Nothing was read from the source, so there is no
@@ -440,6 +458,9 @@ def fetch(
         "fetched_at": result.fetched_at.isoformat(),
         "fetch_provider": served_by(prov, result),
     }
+    extra_meta["fetch_route"] = prov.name
+    if result.metadata.get("x_evidence") is not None:
+        extra_meta["x_evidence"] = result.metadata["x_evidence"]
     if result.metadata.get("author"):
         extra_meta["author"] = result.metadata["author"]
 
@@ -533,7 +554,12 @@ def fetch(
     note_id = note_path.stem
     plan = compute_sync_plan(vault)
     if plan.to_add or plan.to_update:
-        execute_sync(vault, plan)
+        sync_result = execute_sync(vault, plan)
+        if sync_result.errors:
+            envelope = error("Note is durable but indexing failed", "INDEX_PROJECTION_FAILED")
+            envelope.data = {"note_id": note_id, "errors": sync_result.errors, "x_evidence": extra_meta.get("x_evidence")}
+            output(envelope, json_mode=json_output)
+            raise typer.Exit(1)
 
     # Record source in DB. Use INSERT OR IGNORE to survive a duplicate-URL
     # race: two parallel fetches on the same URL both pass the earlier
@@ -545,13 +571,13 @@ def fetch(
     conn.execute(
         """INSERT OR IGNORE INTO sources (url, note_id, domain, fetched_at, provider, content_hash)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        (url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash),
+        (url, note_id, domain, result.fetched_at.isoformat(), served_by(prov, result), content_hash),
     )
     # An orphaned row (note deleted → ON DELETE SET NULL) also makes that INSERT
     # a no-op, but nobody owns the url, so claim it. Guarded on note_id IS NULL,
     # so a genuine race winner is left alone and the check below still fires.
     reclaim_orphaned_source_row(
-        conn, url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash
+        conn, url, note_id, domain, result.fetched_at.isoformat(), served_by(prov, result), content_hash
     )
     conn.commit()
 
@@ -562,7 +588,7 @@ def fetch(
     winner_row = conn.execute(
         "SELECT note_id FROM sources WHERE url = ?", (url,)
     ).fetchone()
-    if winner_row and winner_row["note_id"] != note_id:
+    if winner_row and winner_row["note_id"] != note_id and not extra_meta.get("x_evidence"):
         winning_note_id = winner_row["note_id"]
         # Our write lost the race. Unlink the orphan .md file.
         if note_path.exists():
@@ -609,7 +635,10 @@ def fetch(
         "title": note_title,
         "url": url,
         "domain": domain,
-        "provider": prov.name,
+        "provider": served_by(prov, result),
+        "fetch_route": prov.name,
+        "x_evidence": extra_meta.get("x_evidence"),
+        "source_outcome": result.metadata.get("x_operation"),
         "path": str(note_path.relative_to(vault.root)),
         "word_count": len(result.content.split()),
         "assets": saved_assets,

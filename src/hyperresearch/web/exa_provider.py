@@ -89,6 +89,9 @@ class ExaProvider:
 
     def fetch(self, url: str) -> WebResult:
         """Fetch a single URL via Exa /contents and return clean text."""
+        from hyperresearch.web.base import require_article_url
+
+        require_article_url(url)
         response = self._client.get_contents(
             [url],
             text={"max_characters": self._text_max_characters},

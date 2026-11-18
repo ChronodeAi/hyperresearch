@@ -9,8 +9,11 @@ import typer
 from rich.console import Console
 from rich.table import Table
 from rich.tree import Tree
+from rich.markup import escape
+from rich.text import Text
 
 from hyperresearch.models.output import Envelope
+from hyperresearch.core.x_projection import terminal_text
 
 console = Console()
 err_console = Console(stderr=True)
@@ -42,7 +45,7 @@ def _output_rich(data: Any, **kwargs: Any) -> None:
     """Output in rich terminal format."""
     if isinstance(data, Envelope):
         if not data.ok:
-            err_console.print(f"[red bold]Error:[/] {data.error}")
+            err_console.print(f"[red bold]Error:[/] {escape(terminal_text(str(data.error)))}")
             raise typer.Exit(1)
         _output_rich(data.data, **kwargs)
         return
@@ -52,22 +55,22 @@ def _output_rich(data: Any, **kwargs: Any) -> None:
     elif isinstance(data, list):
         _print_list(data, **kwargs)
     elif isinstance(data, str):
-        console.print(data)
+        console.print(terminal_text(data), markup=False)
     else:
-        console.print(str(data))
+        console.print(terminal_text(str(data)), markup=False)
 
 
 def _print_dict(data: dict, **kwargs: Any) -> None:
     """Pretty-print a dict."""
     for key, value in data.items():
         if isinstance(value, dict):
-            console.print(f"[bold]{key}:[/]")
+            console.print(f"[bold]{escape(terminal_text(str(key)))}:[/]")
             _print_dict(value)
         elif isinstance(value, list) and value and isinstance(value[0], dict):
-            console.print(f"\n[bold]{key}:[/]")
+            console.print(f"\n[bold]{escape(terminal_text(str(key)))}:[/]")
             _print_list(value)
         else:
-            console.print(f"  [dim]{key}:[/] {value}")
+            console.print(f"  [dim]{escape(terminal_text(str(key)))}:[/] {escape(terminal_text(str(value)))}")
 
 
 def _print_list(data: list, **kwargs: Any) -> None:
@@ -80,13 +83,13 @@ def _print_list(data: list, **kwargs: Any) -> None:
         table = Table(show_header=True, header_style="bold")
         cols = list(data[0].keys())
         for col in cols:
-            table.add_column(col)
+            table.add_column(Text(terminal_text(str(col))))
         for item in data:
-            table.add_row(*(str(item.get(c, "")) for c in cols))
+            table.add_row(*(Text(terminal_text(str(item.get(c, "")))) for c in cols))
         console.print(table)
     else:
         for item in data:
-            console.print(f"  - {item}")
+            console.print(f"  - {escape(terminal_text(str(item)))}")
 
 
 def print_note_summary(notes: list[dict], title: str = "Notes") -> None:
@@ -100,10 +103,10 @@ def print_note_summary(notes: list[dict], title: str = "Notes") -> None:
     for n in notes:
         tags = ", ".join(n.get("tags", []))
         table.add_row(
-            n.get("id", ""),
-            n.get("title", ""),
-            n.get("status", ""),
-            tags,
+            Text(terminal_text(n.get("id", ""))),
+            Text(terminal_text(n.get("title", ""))),
+            Text(terminal_text(n.get("status", ""))),
+            Text(terminal_text(tags)),
             str(n.get("word_count", "")),
         )
     console.print(table)

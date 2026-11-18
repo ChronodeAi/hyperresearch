@@ -8,6 +8,8 @@ import typer
 
 from hyperresearch.cli._output import console, output, print_note_summary
 from hyperresearch.models.output import error, success
+from hyperresearch.core.x_projection import note_evidence_projection, terminal_text
+from rich.markup import escape
 
 app = typer.Typer()
 
@@ -27,6 +29,7 @@ def note_new(
     tier: str | None = typer.Option(None, "--tier", help="Epistemic tier: ground_truth|institutional|practitioner|commentary|unknown"),
     content_type: str | None = typer.Option(None, "--content-type", help="Artifact kind: paper|docs|article|blog|forum|dataset|policy|code|book|transcript|review|unknown"),
     template: str | None = typer.Option(None, "--template", "-T", help="Template: note|concept|reference|guide|comparison|moc"),
+    x_evidence_file: str | None = typer.Option(None, "--x-evidence-file", help="Governed note evidence references JSON"),
     edit: bool = typer.Option(False, "--edit", "-e", help="Open in $EDITOR"),
     json_output: bool = typer.Option(False, "--json", "-j", help="JSON output"),
 ) -> None:
@@ -92,6 +95,14 @@ def note_new(
         else:
             for s in existing:
                 console.print(f"[yellow]Similar note exists:[/] {s['id']} — {s['title']}")
+    extra_metadata = {}
+    if x_evidence_file:
+        import json
+        from hyperresearch.core.x_evidence import EvidenceStore
+
+        references = json.loads(P(x_evidence_file).read_text())
+        EvidenceStore(vault.root).validate_note_refs(references)
+        extra_metadata["x_evidence"] = references
 
     # Use template if specified
     if template:
@@ -99,33 +110,39 @@ def note_new(
 
         tpl = get_template(template, vault.templates_dir)
         if tpl:
+            from hyperresearch.core.frontmatter import parse_frontmatter
+
             rendered = render_template(tpl, title, nid, tags)
-            target_dir = vault.notes_dir
-            if parent:
-                target_dir = target_dir / slugify(parent)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            file_path = target_dir / f"{nid}.md"
-            counter = 2
-            while file_path.exists():
-                file_path = target_dir / f"{nid}-{counter}.md"
-                nid = f"{nid}-{counter}"
-                counter += 1
-            file_path.write_text(rendered, encoding="utf-8")
-            path = file_path
+            template_meta, template_body = parse_frontmatter(rendered)
+            template_fields = template_meta.model_dump(mode="json", exclude_none=True)
+            template_fields.pop("id", None)
+            template_fields.update(extra_metadata)
+            for key, value in (("source", source), ("parent", parent), ("summary", summary),
+                               ("tier", tier), ("content_type", content_type)):
+                if value is not None:
+                    template_fields[key] = value
+            path = write_note(vault.notes_dir, title, body=template_body + (body if body_file or body_text or body_stdin else ""),
+                              tags=tags, status=status, note_type=note_type, parent=parent, source=source,
+                              extra_frontmatter=template_fields)
         else:
             console.print(f"[yellow]Template '{template}' not found, using default.[/]")
             path = write_note(vault.notes_dir, title, body=body, tags=tags, status=status,
                               note_type=note_type, parent=parent, summary=summary,
-                              source=source, tier=tier, content_type=content_type)
+                              source=source, tier=tier, content_type=content_type, extra_frontmatter=extra_metadata)
     else:
         path = write_note(vault.notes_dir, title, body=body, tags=tags, status=status,
                           note_type=note_type, parent=parent, summary=summary,
-                          source=source, tier=tier, content_type=content_type)
+                          source=source, tier=tier, content_type=content_type, extra_frontmatter=extra_metadata)
 
     # Sync the new file into the DB so type/tags are indexed immediately
     from hyperresearch.core.sync import compute_sync_plan, execute_sync
     plan = compute_sync_plan(vault)
-    execute_sync(vault, plan)
+    sync_result = execute_sync(vault, plan)
+    if sync_result.errors:
+        failure = error("Durable note has index projection errors", "INDEX_PROJECTION_FAILED", vault=str(vault.root))
+        failure.data = {"path": path.relative_to(vault.root).as_posix(), "errors": sync_result.errors}
+        output(failure, json_mode=json_output)
+        raise typer.Exit(1)
 
     # Read back the note ID (may have been collision-adjusted)
     from hyperresearch.core.note import read_note
@@ -135,7 +152,10 @@ def note_new(
     rel = path.relative_to(vault.root).as_posix()
 
     if json_output:
-        data = {"id": nid, "path": rel, "title": title}
+        data = {"id": nid, "path": rel, "title": note.meta.title}
+        if note.meta.x_evidence is not None:
+            data.update(x_evidence=note.meta.x_evidence, fetch_provider=note.meta.fetch_provider,
+                        fetch_route=note.meta.fetch_route)
         if similar:
             data["warning"] = f"Similar note already exists: {similar[0]['id']}"
             data["similar"] = [{"id": r["id"], "title": r["title"]} for r in similar]
@@ -191,6 +211,8 @@ def note_show(
             "word_count": row["word_count"], "source": row["source"],
             "parent": row["parent"], "summary": row["summary"],
         }
+        from hyperresearch.core.x_projection import note_evidence_projection
+        data.update(note_evidence_projection(row))
         # Open-access substitution. Surfaced structurally, not just as the
         # banner in the body, so a reader checking a quotation can tell it is
         # looking at a preprint without having to parse prose. `source` above
@@ -235,7 +257,8 @@ def note_show(
                 else:
                     console.print(f"[red]Note not found:[/] {note_id}")
                 raise typer.Exit(1)
-            console.print((vault.root / row["path"]).read_text(encoding="utf-8"))
+            from hyperresearch.core.x_projection import terminal_text
+            console.print(terminal_text((vault.root / row["path"]).read_text(encoding="utf-8")), markup=False)
             return
 
         data = _fetch_note(note_id)
@@ -255,11 +278,15 @@ def note_show(
                         console.print(f"  [dim]{k}:[/] {v}")
             else:
                 tags = data.get("tags", [])
-                console.print(f"[bold]{data['title']}[/]  [dim]({data['id']})[/]")
-                console.print(f"[dim]Status: {data['status']} | Tags: {', '.join(tags)}[/]")
+                console.print(f"[bold]{escape(terminal_text(data['title']))}[/]  [dim]({escape(terminal_text(data['id']))})[/]")
+                console.print(f"[dim]Status: {escape(terminal_text(data['status']))} | Tags: {escape(terminal_text(', '.join(tags)))}[/]")
                 console.print()
                 from rich.markdown import Markdown
-                console.print(Markdown(data.get("body", "")))
+                if data.get("x_evidence") is not None:
+                    from hyperresearch.core.x_projection import terminal_text
+                    console.print(terminal_text(data.get("body", "")), markup=False)
+                else:
+                    console.print(Markdown(data.get("body", "")))
         return
 
     # Multi-note — batch read
@@ -278,12 +305,16 @@ def note_show(
     else:
         for data in notes:
             tags = data.get("tags", [])
-            console.print(f"\n[bold]{data['title']}[/]  [dim]({data['id']})[/]")
-            console.print(f"[dim]Status: {data['status']} | Tags: {', '.join(tags)}[/]")
+            console.print(f"\n[bold]{escape(terminal_text(data['title']))}[/]  [dim]({escape(terminal_text(data['id']))})[/]")
+            console.print(f"[dim]Status: {escape(terminal_text(data['status']))} | Tags: {escape(terminal_text(', '.join(tags)))}[/]")
             if not meta:
                 console.print()
                 from rich.markdown import Markdown
-                console.print(Markdown(data.get("body", "")))
+                if data.get("x_evidence") is not None:
+                    from hyperresearch.core.x_projection import terminal_text
+                    console.print(terminal_text(data.get("body", "")), markup=False)
+                else:
+                    console.print(Markdown(data.get("body", "")))
         if not_found:
             console.print(f"\n[red]Not found:[/] {', '.join(not_found)}")
 
@@ -387,6 +418,7 @@ def note_list(
             "summary": row["summary"],
             "created": row["created"],
             "updated": row["updated"],
+            **note_evidence_projection(row),
         })
 
     if json_output:
@@ -524,20 +556,39 @@ def note_update(
 
     if not changed:
         if json_output:
-            output(success({"id": note_id, "changed": []}, vault=str(vault.root)), json_mode=True)
+            data = {"id": note_id, "changed": []}
+            if meta.x_evidence is not None:
+                data.update(x_evidence=meta.x_evidence, fetch_provider=meta.fetch_provider, fetch_route=meta.fetch_route)
+            output(success(data, vault=str(vault.root)), json_mode=True)
         else:
             console.print("[dim]Nothing to update.[/]")
         return
 
     meta.updated = datetime.now(UTC)
+    from hyperresearch.models.note import NoteMeta
+
+    meta = NoteMeta.model_validate(meta.model_dump(mode="json"))
     new_content = serialize_frontmatter(meta) + "\n" + body
-    file_path.write_text(new_content, encoding="utf-8")
+    if meta.x_evidence is not None:
+        from hyperresearch.core.x_artifacts import atomic_write
+
+        atomic_write(file_path, new_content.encode("utf-8"))
+    else:
+        file_path.write_text(new_content, encoding="utf-8")
 
     plan = compute_sync_plan(vault)
-    execute_sync(vault, plan)
+    sync_result = execute_sync(vault, plan)
+    if sync_result.errors:
+        failure = error("Durable metadata update has index projection errors", "INDEX_PROJECTION_FAILED", vault=str(vault.root))
+        failure.data = {"id": note_id, "x_evidence": meta.x_evidence, "errors": sync_result.errors}
+        output(failure, json_mode=json_output)
+        raise typer.Exit(1)
 
     if json_output:
-        output(success({"id": note_id, "changed": changed}, vault=str(vault.root)), json_mode=True)
+        data = {"id": note_id, "changed": changed}
+        if meta.x_evidence is not None:
+            data.update(x_evidence=meta.x_evidence, fetch_provider=meta.fetch_provider, fetch_route=meta.fetch_route)
+        output(success(data, vault=str(vault.root)), json_mode=True)
     else:
         console.print(f"[green]Updated {note_id}:[/] {', '.join(changed)}")
 
@@ -677,14 +728,20 @@ def note_rm(
                 # Resolve and guard against path traversal — a malicious or
                 # corrupted frontmatter could set raw_file to "../../etc/passwd".
                 # Refuse to unlink anything outside <vault>/research/.
-                research_root = (vault.root / "research").resolve()
-                raw_path = (vault.root / "research" / meta.raw_file).resolve()
+                research_root = vault.research_dir.resolve()
+                raw_path = (vault.research_dir / meta.raw_file).resolve()
                 try:
                     raw_path.relative_to(research_root)
                     inside_vault = True
                 except ValueError:
                     inside_vault = False
-                if inside_vault and raw_path.exists() and raw_path.is_file():
+                shared = any(
+                    candidate["id"] != note_id and candidate["metadata_json"]
+                    and __import__("json").loads(candidate["metadata_json"]).get("raw_file") == meta.raw_file
+                    for candidate in vault.db.execute("SELECT id,metadata_json FROM notes")
+                )
+                canonical = raw_path == vault.evidence_dir.resolve() or vault.evidence_dir.resolve() in raw_path.parents
+                if inside_vault and not shared and not canonical and raw_path.exists() and raw_path.is_file():
                     raw_path.unlink()
                     removed_raw = str(raw_path.relative_to(vault.root).as_posix())
         except Exception:

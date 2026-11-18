@@ -1,0 +1,704 @@
+{
+  "schemaVersion": "1",
+  "policy": {
+    "strict": true,
+    "remoteReferences": "deny",
+    "compatibility": "none",
+    "requireFixtures": true,
+    "requireDigest": true
+  },
+  "domains": [
+    {
+      "schemaVersion": "1",
+      "domain": "hyperresearch-x-research",
+      "owner": {
+        "id": "hyperresearch"
+      },
+      "policy": {
+        "strict": true,
+        "remoteReferences": "deny",
+        "compatibility": "none",
+        "requireFixtures": true,
+        "requireDigest": true
+      },
+      "artifacts": [
+        {
+          "logicalName": "x-source-capture",
+          "id": "https://aiwg.io/schemas/opencli-x-source-capture.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "opencli"
+          },
+          "authority": {
+            "kind": "external",
+            "path": "src/hyperresearch/schemas/x/source-capture.schema.json",
+            "uri": "https://aiwg.io/schemas/opencli-x-source-capture.v1.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [
+            {
+              "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60"
+            }
+          ],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: opencli/schemas/x/source-capture.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/source-capture/valid-original.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capture/valid-quote-id-only.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capture/valid-delivered-raw-context-clipped.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/source-capture/invalid-numeric-post-id.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capture/invalid-escaping-artifact.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capture/invalid-delivered-without-context.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capture/invalid-bad-timestamp.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "mirror",
+              "path": "src/hyperresearch/schemas/x/source-capture.schema.json",
+              "digest": "sha256:cdbadc2daf0741d8f460a3975dc683e94922aa37dc0664228c6abf44b9648b69",
+              "generated": true
+            },
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:cdbadc2daf0741d8f460a3975dc683e94922aa37dc0664228c6abf44b9648b69",
+          "publication": {
+            "public": false
+          }
+        },
+        {
+          "logicalName": "x-source-receipt",
+          "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "opencli"
+          },
+          "authority": {
+            "kind": "external",
+            "path": "src/hyperresearch/schemas/x/source-receipt.schema.json",
+            "uri": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: opencli/schemas/x/source-receipt.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/source-receipt/valid-page-commit.json",
+              "src/hyperresearch/schemas/x/fixtures/source-receipt/valid-context-cap-retains-delivered-raw.json",
+              "src/hyperresearch/schemas/x/fixtures/source-receipt/valid-durable-partial-unknown-execution.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/source-receipt/invalid-page-is-not-final-settlement.json",
+              "src/hyperresearch/schemas/x/fixtures/source-receipt/invalid-malformed-unknown-state.json",
+              "src/hyperresearch/schemas/x/fixtures/source-receipt/invalid-negative-scope-budget.json",
+              "src/hyperresearch/schemas/x/fixtures/source-receipt/invalid-bad-artifact-digest.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "mirror",
+              "path": "src/hyperresearch/schemas/x/source-receipt.schema.json",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60",
+              "generated": true
+            },
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60",
+          "publication": {
+            "public": false
+          }
+        },
+        {
+          "logicalName": "x-source-capabilities",
+          "id": "https://aiwg.io/schemas/opencli-x-source-capabilities.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "opencli"
+          },
+          "authority": {
+            "kind": "external",
+            "path": "src/hyperresearch/schemas/x/source-capabilities.schema.json",
+            "uri": "https://aiwg.io/schemas/opencli-x-source-capabilities.v1.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [
+            {
+              "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60"
+            }
+          ],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: opencli/schemas/x/source-capabilities.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/source-capabilities/valid-static-known.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capabilities/valid-unknown-runtime.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/source-capabilities/invalid-unknown-major-version.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capabilities/invalid-malformed-unknown-state.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capabilities/invalid-mutating-probe.json",
+              "src/hyperresearch/schemas/x/fixtures/source-capabilities/invalid-forged-login-proof.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "mirror",
+              "path": "src/hyperresearch/schemas/x/source-capabilities.schema.json",
+              "digest": "sha256:d02234630c6441aed381dfbe1746458c3eeffafbc9ec8eea70a431c5dea4a0ae",
+              "generated": true
+            },
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:d02234630c6441aed381dfbe1746458c3eeffafbc9ec8eea70a431c5dea4a0ae",
+          "publication": {
+            "public": false
+          }
+        },
+        {
+          "logicalName": "x-monitor-plan",
+          "id": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "hyperresearch"
+          },
+          "authority": {
+            "kind": "canonical",
+            "path": "src/hyperresearch/schemas/x/monitor-plan.schema.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [
+            {
+              "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60"
+            }
+          ],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: hyperresearch/src/hyperresearch/schemas/x/monitor-plan.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/valid-source-only-sentiment.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/valid-analyzed-sentiment.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/valid-crypto-discovery.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/valid-market-flow.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/invalid-negative-budget.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/invalid-escaping-output.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/invalid-unsupported-product.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/invalid-executable-code.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-plan/invalid-unknown-version.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:51bd286ab8e4c1199e235c3c5ee4ce7a72ed4c323a4fbe46c261e209fb9f062b",
+          "publication": {
+            "public": false
+          }
+        },
+        {
+          "logicalName": "x-monitor-session",
+          "id": "https://aiwg.io/schemas/hyperresearch-x-monitor-session.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "hyperresearch"
+          },
+          "authority": {
+            "kind": "canonical",
+            "path": "src/hyperresearch/schemas/x/monitor-session.schema.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [
+            {
+              "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60"
+            },
+            {
+              "id": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:51bd286ab8e4c1199e235c3c5ee4ce7a72ed4c323a4fbe46c261e209fb9f062b"
+            }
+          ],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: hyperresearch/src/hyperresearch/schemas/x/monitor-session.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/monitor-session/valid-initial-checkpoint.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-session/valid-restart-unknown-executor.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/monitor-session/invalid-negative-cumulative-reservation.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-session/invalid-unknown-execution-released.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-session/invalid-unsafe-output-ref.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-session/invalid-unsupported-version.json",
+              "src/hyperresearch/schemas/x/fixtures/monitor-session/invalid-duplicate-billing-request-id.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            },
+            {
+              "kind": "types",
+              "path": "src/hyperresearch/models/note.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:3ece3a7f85ee996b167d09dc9e732043e9087750742cee900be695e69cfc0fc9",
+          "publication": {
+            "public": false
+          }
+        },
+        {
+          "logicalName": "x-analysis-annotation",
+          "id": "https://aiwg.io/schemas/hyperresearch-x-analysis-annotation.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "hyperresearch"
+          },
+          "authority": {
+            "kind": "canonical",
+            "path": "src/hyperresearch/schemas/x/analysis-annotation.schema.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [
+            {
+              "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60"
+            },
+            {
+              "id": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:51bd286ab8e4c1199e235c3c5ee4ce7a72ed4c323a4fbe46c261e209fb9f062b"
+            }
+          ],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: hyperresearch/src/hyperresearch/schemas/x/analysis-annotation.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/analysis-annotation/valid-available-typed-choice.json",
+              "src/hyperresearch/schemas/x/fixtures/analysis-annotation/valid-deferred-missing-context.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/analysis-annotation/invalid-malformed-unknown-status.json",
+              "src/hyperresearch/schemas/x/fixtures/analysis-annotation/invalid-negative-reservation.json",
+              "src/hyperresearch/schemas/x/fixtures/analysis-annotation/invalid-available-without-export-grant.json",
+              "src/hyperresearch/schemas/x/fixtures/analysis-annotation/invalid-untyped-generated-answer.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:4e13f70f6a60c91765ad62280ce1c70a01aeb64f145a7cffa8fdec4c68ed95b2",
+          "publication": {
+            "public": false
+          }
+        },
+        {
+          "logicalName": "x-verified-observation",
+          "id": "https://aiwg.io/schemas/hyperresearch-x-verified-observation.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "hyperresearch"
+          },
+          "authority": {
+            "kind": "canonical",
+            "path": "src/hyperresearch/schemas/x/verified-observation.schema.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [
+            {
+              "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60"
+            }
+          ],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: hyperresearch/src/hyperresearch/schemas/x/verified-observation.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/verified-observation/valid-unverified-provider-fdv.json",
+              "src/hyperresearch/schemas/x/fixtures/verified-observation/valid-reorg-invalidated-swap.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/verified-observation/invalid-contract-without-chain.json",
+              "src/hyperresearch/schemas/x/fixtures/verified-observation/invalid-numeric-quantity.json",
+              "src/hyperresearch/schemas/x/fixtures/verified-observation/invalid-malformed-unknown-verification.json",
+              "src/hyperresearch/schemas/x/fixtures/verified-observation/invalid-unsupported-version.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:2833e6d2ff9fb31445bfff9fdff27a5254b815ebc08a79c0779e1bd6e90774f7",
+          "publication": {
+            "public": false
+          }
+        },
+        {
+          "logicalName": "x-analytics-event",
+          "id": "https://aiwg.io/schemas/hyperresearch-x-analytics-event.v1.json",
+          "version": "1.0.0",
+          "format": "json-schema",
+          "dialect": "https://json-schema.org/draft/2020-12/schema",
+          "lifecycle": "proposed",
+          "stability": "preview",
+          "owner": {
+            "id": "hyperresearch"
+          },
+          "authority": {
+            "kind": "canonical",
+            "path": "src/hyperresearch/schemas/x/analytics-event.schema.json"
+          },
+          "policy": {
+            "strict": true,
+            "remoteReferences": "deny",
+            "compatibility": "none",
+            "requireFixtures": true,
+            "requireDigest": true
+          },
+          "compatibility": {
+            "mode": "none"
+          },
+          "dependencies": [
+            {
+              "id": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:b19cb2e74098c516b52d66fe33201d241c03ee6b23fb517259e3bb272e6f2e60"
+            },
+            {
+              "id": "https://aiwg.io/schemas/hyperresearch-x-monitor-plan.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:51bd286ab8e4c1199e235c3c5ee4ce7a72ed4c323a4fbe46c261e209fb9f062b"
+            },
+            {
+              "id": "https://aiwg.io/schemas/hyperresearch-x-analysis-annotation.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:4e13f70f6a60c91765ad62280ce1c70a01aeb64f145a7cffa8fdec4c68ed95b2"
+            },
+            {
+              "id": "https://aiwg.io/schemas/hyperresearch-x-verified-observation.v1.json",
+              "version": "1.0.0",
+              "digest": "sha256:2833e6d2ff9fb31445bfff9fdff27a5254b815ebc08a79c0779e1bd6e90774f7"
+            }
+          ],
+          "consumers": [
+            {
+              "id": "opencli-native",
+              "boundary": "native wire and source authorization",
+              "notes": "Canonical source: hyperresearch/src/hyperresearch/schemas/x/analytics-event.schema.json. Local catalog identity; no network publication claim."
+            },
+            {
+              "id": "hyperresearch-evidence",
+              "boundary": "canonical persistence, NoteMeta, cache, transport and replay",
+              "notes": "Preserve all fields, nulls, reference closure and actual producer. Source bytes stay unchanged; projections render text inert."
+            },
+            {
+              "id": "agent-reach-x",
+              "boundary": "CLI/MCP routing and non-starting diagnostics",
+              "notes": "Static availability is not login/content/coverage proof."
+            },
+            {
+              "id": "compatibility-review",
+              "boundary": "new v1 baseline and clean cutover",
+              "notes": "Initial authority: no predecessor compatibility baseline exists. Unknown majors rejected. Cut over every governed producer/consumer only after catalog/fixture/projection gates; no provenance-losing shim."
+            }
+          ],
+          "fixtures": {
+            "valid": [
+              "src/hyperresearch/schemas/x/fixtures/analytics-event/valid-provisional-sentiment.json",
+              "src/hyperresearch/schemas/x/fixtures/analytics-event/valid-corrected-flow-retraction.json",
+              "src/hyperresearch/schemas/x/fixtures/analytics-event/valid-crypto-lead-needs-verification.json"
+            ],
+            "invalid": [
+              "src/hyperresearch/schemas/x/fixtures/analytics-event/invalid-partial-claimed-final.json",
+              "src/hyperresearch/schemas/x/fixtures/analytics-event/invalid-negative-denominator.json",
+              "src/hyperresearch/schemas/x/fixtures/analytics-event/invalid-malformed-unknown-coverage.json",
+              "src/hyperresearch/schemas/x/fixtures/analytics-event/invalid-numeric-flow-quantity.json"
+            ]
+          },
+          "projections": [
+            {
+              "kind": "validator",
+              "path": "src/hyperresearch/models/x_evidence.py",
+              "generated": false
+            }
+          ],
+          "digest": "sha256:8b73741f0e3bea91b5909991288cf9de88deb0c86a3a0a60522fd3b185b3b0d1",
+          "publication": {
+            "public": false
+          }
+        }
+      ]
+    }
+  ]
+}

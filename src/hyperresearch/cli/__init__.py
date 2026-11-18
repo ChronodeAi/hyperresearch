@@ -150,3 +150,7 @@ app.add_typer(scholar_app, name="scholar", help="Academic and specialist source 
 app.add_typer(sources_app, name="sources", help="Fetched web sources.")
 app.add_typer(assets_app, name="assets", help="Downloaded images, screenshots, and media.")
 app.add_typer(link_app, name="link", help="Auto-discover and insert wiki-links.")
+
+from hyperresearch.cli.x_cmd import app as x_app
+
+app.add_typer(x_app, name="x", help="Bounded native X monitoring and observational analytics.")

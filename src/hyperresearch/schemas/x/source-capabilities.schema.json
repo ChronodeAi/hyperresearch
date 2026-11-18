@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiwg.io/schemas/opencli-x-source-capabilities.v1.json",
+  "title": "OpenCLI X non-starting source capabilities v1",
+  "$comment": "Static local metadata only. Availability never proves login, returned content, coverage, extension activation or live qualification. Unknown provenance must remain explicit. Local catalog identity, not publication.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "producer", "contract_versions", "operations", "semantics", "availability", "provenance", "non_starting", "non_mutating"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "producer": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/producer"},
+    "contract_versions": {
+      "type": "object", "additionalProperties": false, "required": ["source_capture", "source_receipt", "source_scope"],
+      "properties": {
+        "source_capture": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"const": 1}},
+        "source_receipt": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"const": 1}},
+        "source_scope": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"const": 1}}
+      }
+    },
+    "operations": {"type": "array", "uniqueItems": true, "items": {"enum": ["search", "post", "thread", "user-timeline", "collection"]}},
+    "semantics": {
+      "type": "object", "additionalProperties": false, "required": ["committed_pages", "resume", "settlement", "immutable_deadline"],
+      "properties": {"committed_pages": {"type": "boolean"}, "resume": {"type": "boolean"}, "settlement": {"type": "boolean"}, "immutable_deadline": {"type": "boolean"}}
+    },
+    "availability": {
+      "type": "object", "additionalProperties": false, "required": ["state", "reasons"],
+      "properties": {"state": {"enum": ["available", "unavailable", "unknown"]}, "reasons": {"type": "array", "items": {"type": "string"}}}
+    },
+    "provenance": {
+      "type": "object", "additionalProperties": false, "required": ["state", "checked_at", "notes"],
+      "properties": {"state": {"enum": ["known", "unknown"]}, "checked_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"}, "notes": {"type": "array", "items": {"type": "string"}}}
+    },
+    "non_starting": {"const": true},
+    "non_mutating": {"const": true}
+  }
+}

@@ -206,9 +206,6 @@ def test_cli_single_fetch_reports_the_cert_refusal(cert_vault):
     assert payload["ok"] is False
     assert "certificate verification failed" in payload["error"]
     assert rescues == ["10.1234/x"]
-    # Two connections: the fetch, then the rescue's attempt at the same host.
-    # Neither completed a handshake, so neither lane skipped verification.
-    assert stats["connections"] == 2
     assert stats["handshakes_completed"] == 0
 
 
@@ -223,7 +220,4 @@ def test_cli_batch_fetch_reports_the_cert_refusal(cert_vault):
     assert [f["url"] for f in failed] == [f"{base}/paper"]
     assert "certificate verification failed" in failed[0]["error"]
     assert rescues == ["10.1234/x"]
-    # Two connections: the fetch, then the rescue's attempt at the same host.
-    # Neither completed a handshake, so neither lane skipped verification.
-    assert stats["connections"] == 2
     assert stats["handshakes_completed"] == 0

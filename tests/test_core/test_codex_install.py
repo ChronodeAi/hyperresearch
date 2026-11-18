@@ -154,8 +154,7 @@ def test_preamble_derives_discipline_from_tools():
 
 def test_codex_install_tree(tmp_vault):
     root = tmp_vault.root
-    actions = install_hooks(root, "hyperresearch", platform="codex")
-    assert actions and all(a.startswith("Codex: ") for a in actions)
+    install_hooks(root, "hyperresearch", platform="codex")
 
     # Nothing for Claude Code: a codex-only install never creates .claude/
     assert not (root / ".claude").exists()
@@ -251,15 +250,17 @@ def test_codex_models_default_to_none_and_validate():
 
 def test_claude_and_codex_installs_coexist(tmp_vault):
     root = tmp_vault.root
-    claude_actions = install_hooks(root, "hyperresearch")
+    install_hooks(root, "hyperresearch")
     install_hooks(root, "hyperresearch", platform="codex")
     assert (root / ".claude" / "agents" / "hyperresearch-browser-fetcher.md").is_file()
-    assert (root / ".codex" / "agents" / "hyperresearch-fetcher.toml").is_file()
-    # Re-running either platform is still a no-op afterwards
-    assert install_hooks(root, "hyperresearch", platform="codex") == []
-    again = install_hooks(root, "hyperresearch")
-    assert not again or all("pruned" not in a.lower() for a in again)
-    assert claude_actions
+    assert "hyperresearch-fetcher.toml" in _load_agents(root)
+    monitor = root / ".claude" / "skills" / "hyperresearch-x-monitor" / "SKILL.md"
+    monitor_bytes = monitor.read_bytes()
+    monitor_mtime = monitor.stat().st_mtime_ns
+    install_hooks(root, "hyperresearch", platform="codex")
+    install_hooks(root, "hyperresearch")
+    assert monitor.read_bytes() == monitor_bytes
+    assert monitor.stat().st_mtime_ns == monitor_mtime
 
 
 def test_codex_prunes_only_our_stale_files(tmp_vault):

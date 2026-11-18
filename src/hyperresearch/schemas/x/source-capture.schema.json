@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aiwg.io/schemas/opencli-x-source-capture.v1.json",
+  "title": "OpenCLI X source capture v1",
+  "$comment": "OpenCLI is the canonical source owner. Local catalog ID, not publication. Captured text is untrusted attributed data. Content revision, occurrence and repost event time are distinct.",
+  "type": "object", "additionalProperties": false,
+  "required": ["schema_version", "capture_id", "post_id", "revision", "author", "text", "url", "posted_at", "captured_at", "event_time", "role", "event_type", "relationships", "occurrence", "artifact", "producer"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "capture_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"},
+    "post_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/post_id"},
+    "revision": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"},
+    "author": {
+      "type": "object", "additionalProperties": false, "required": ["id", "handle", "name"],
+      "properties": {
+        "id": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/post_id"}, {"type": "null"}]},
+        "handle": {"type": ["string", "null"], "pattern": "^[A-Za-z0-9_]{1,15}$"},
+        "name": {"type": ["string", "null"]}
+      }
+    },
+    "text": {"type": "string"},
+    "url": {"type": "string", "format": "uri", "pattern": "^https://(?:www\\.)?(?:x\\.com|twitter\\.com)/(?:[A-Za-z0-9_]{1,15}|i/web)/status/[1-9][0-9]{0,24}$"},
+    "posted_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"},
+    "captured_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"},
+    "event_time": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/nullable_timestamp"},
+    "role": {"enum": ["primary", "context", "unknown"]},
+    "event_type": {"enum": ["original", "repost", "quote", "reply", "unknown"]},
+    "relationships": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["kind", "target_post_id", "delivery", "capture_ref"],
+        "properties": {
+          "kind": {"enum": ["repost-of", "quote-of", "reply-to", "thread-parent", "context-of"]},
+          "target_post_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/post_id"},
+          "delivery": {"enum": ["delivered", "id-only", "unavailable", "unknown"]},
+          "capture_ref": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}, {"type": "null"}]}
+        },
+        "allOf": [
+          {"if": {"properties": {"delivery": {"const": "delivered"}}}, "then": {"properties": {"capture_ref": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"}}}, "else": {"properties": {"capture_ref": {"type": "null"}}}}
+        ],
+        "$comment": "delivery records full source-payload delivery, not model-context readiness or emitted context quota. A delivered capture_ref can identify an admitted normalized SourceCapture, or safe raw page bytes with record_id post-<target_post_id> when context caps clip normalization. Retain raw closure but never treat raw JSON as canonical context; missing normalized context remains partial/deferred."
+      }
+    },
+    "occurrence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["operation_id", "scope_id", "query_id", "query_revision", "page_ordinal", "timeline_event_id", "observed_at"],
+      "properties": {
+        "operation_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"},
+        "scope_id": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"},
+        "query_id": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/identifier"}, {"type": "null"}]},
+        "query_revision": {"anyOf": [{"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/revision"}, {"type": "null"}]},
+        "page_ordinal": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/count"},
+        "timeline_event_id": {"type": ["string", "null"]},
+        "observed_at": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/timestamp"}
+      }
+    },
+    "artifact": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/artifact_ref"},
+    "producer": {"$ref": "https://aiwg.io/schemas/opencli-x-source-receipt.v1.json#/$defs/producer"}
+  }
+}

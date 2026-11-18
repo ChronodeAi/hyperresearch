@@ -1,0 +1,1 @@
+{"monitor_id":"fixture-monitor","pid":null,"schema_version":1,"session_ref":{"path":"monitor-session/valid-initial-checkpoint.json","record_id":"fixture-session","schema_id":"https://aiwg.io/schemas/hyperresearch-x-monitor-session.v1.json","sha256":"8768a2aafde6e3f6867253e815d5f70faf1744dc8ca3799a9548d371b04482a7"},"updated_at":"2026-10-10T00:00:30Z"}

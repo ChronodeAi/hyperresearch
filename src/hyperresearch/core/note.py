@@ -82,6 +82,40 @@ def _collision_id(base: str, counter: int) -> str:
     return slugify(f"{trimmed.rstrip('-')}{suffix}")
 
 
+def _reuse_evidence_note(notes_dir: Path, meta: NoteMeta) -> Path | None:
+    """Merge late receipt/reference closure without overwriting an enriched note."""
+    if not meta.x_evidence or not meta.x_evidence["capture_refs"]:
+        return None
+    from hyperresearch.core.x_artifacts import atomic_write
+    from hyperresearch.core.x_projection import REFERENCE_FIELDS
+    from yaml import YAMLError
+
+    captures = {(ref["path"], ref["sha256"]) for ref in meta.x_evidence["capture_refs"]}
+    for directory in (notes_dir, notes_dir.parent / "temp"):
+        for path in directory.rglob("*.md") if directory.exists() else []:
+            if path.is_symlink():
+                continue
+            try:
+                previous, body = parse_frontmatter(path.read_text(encoding="utf-8-sig"))
+            except (ValueError, OSError, YAMLError):
+                continue
+            if not previous.x_evidence or not captures.intersection(
+                (ref["path"], ref["sha256"]) for ref in previous.x_evidence["capture_refs"]
+            ):
+                continue
+            if previous.x_evidence["producer"] != meta.x_evidence["producer"]:
+                raise ValueError("Repeated capture cannot change its actual producer")
+            for field in REFERENCE_FIELDS:
+                for ref in meta.x_evidence[field]:
+                    if ref not in previous.x_evidence[field]:
+                        previous.x_evidence[field].append(ref)
+            previous.x_evidence["receipt_state"] = "recorded" if previous.x_evidence["receipt_refs"] else "unknown"
+            previous.tags = list(dict.fromkeys([*previous.tags, *meta.tags]))
+            atomic_write(path, render_note(previous, body).encode("utf-8"))
+            return path
+    return None
+
+
 def write_note(
     notes_dir: Path,
     title: str,
@@ -131,6 +165,13 @@ def write_note(
     if extra_frontmatter:
         kwargs.update(extra_frontmatter)
     meta = NoteMeta(**kwargs)
+    existing_evidence_note = _reuse_evidence_note(notes_dir, meta)
+    if existing_evidence_note is not None:
+        return existing_evidence_note
+    if meta.x_evidence is not None:
+        from hyperresearch.core.x_projection import inert_markdown
+
+        body = inert_markdown(body)
 
     # Determine output path, avoid collisions. Vault layout is FLAT —
     # `parent:` lives in frontmatter (DB-indexed) but does NOT drive the
@@ -149,7 +190,12 @@ def write_note(
         counter += 1
 
     content = render_note(meta, body)
-    file_path.write_text(content, encoding="utf-8")
+    if meta.x_evidence is not None:
+        from hyperresearch.core.x_artifacts import atomic_write
+
+        atomic_write(file_path, content.encode("utf-8"))
+    else:
+        file_path.write_text(content, encoding="utf-8")
     return file_path
 
 

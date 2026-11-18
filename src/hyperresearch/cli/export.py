@@ -25,31 +25,16 @@ def export_json(
     vault = Vault.discover()
     vault.auto_sync()
 
-    notes = []
-    for row in vault.db.execute(
-        "SELECT n.*, nc.body FROM notes n JOIN note_content nc ON n.id = nc.note_id ORDER BY n.title"
-    ):
-        tags = [r["tag"] for r in vault.db.execute("SELECT tag FROM tags WHERE note_id = ?", (row["id"],))]
-        notes.append({
-            "id": row["id"],
-            "title": row["title"],
-            "path": row["path"],
-            "status": row["status"],
-            "type": row["type"],
-            "tags": tags,
-            "created": row["created"],
-            "updated": row["updated"],
-            "word_count": row["word_count"],
-            "source": row["source"],
-            "parent": row["parent"],
-            "summary": row["summary"],
-            "body": row["body"],
-        })
+    from hyperresearch.core.note_transport import export_notes
+
+    rows = vault.db.execute("SELECT path FROM notes ORDER BY title").fetchall()
+    transported = export_notes(vault, rows)
+    notes = transported["notes"]
 
     out = Path(output_path) if output_path else vault.exports_dir / "vault.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     indent = 2 if pretty else None
-    out.write_text(json.dumps(notes, indent=indent, default=str), encoding="utf-8")
+    out.write_text(json.dumps(transported, indent=indent, default=str), encoding="utf-8")
 
     if json_output:
         output(success({"path": str(out), "count": len(notes)}, vault=str(vault.root)), json_mode=True)
@@ -92,16 +77,34 @@ def export_vault(
 
     out_dir = Path(output_path).resolve()
     exported = []
+    from hyperresearch.core.note import read_note
+    from hyperresearch.core.frontmatter import render_note
+    from hyperresearch.core.x_artifacts import atomic_write
+    from hyperresearch.core.x_evidence import EvidenceStore
+    from hyperresearch.core.x_projection import inert_markdown
+    from hyperresearch.core.note_transport import note_destination
+    from hyperresearch.models.x_evidence import canonical_bytes
+
+    store = EvidenceStore(vault.root)
+    bundle = store.export_closure()
+    prepared = []
     for row in rows:
         src = vault.root / row["path"]
         if not src.exists():
-            continue
-        dest = out_dir / row["path"]
+            raise ValueError(f"Missing note export source: {row['path']}")
+        dest = note_destination(out_dir, row["path"])
         exported.append({"id": row["id"], "path": row["path"]})
-        if not dry_run:
+        note = read_note(src, vault.root)
+        store.validate_note_refs(note.meta.x_evidence)
+        prepared.append((src, dest, note))
+    if not dry_run:
+        atomic_write(out_dir / "x-evidence.json", canonical_bytes(bundle))
+        for src, dest, note in prepared:
             dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-
+            if note.meta.x_evidence is not None:
+                atomic_write(dest, render_note(note.meta, inert_markdown(note.body)).encode("utf-8"))
+            else:
+                shutil.copy2(src, dest)
     if json_output:
         action = "would_export" if dry_run else "exported"
         output(success({action: exported, "count": len(exported), "output_path": str(out_dir)},

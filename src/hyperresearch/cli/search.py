@@ -21,6 +21,13 @@ def search(
     retraction: str | None = typer.Option(None, "--retraction", help="retracted|not-retracted|unchecked"),
     oa_version: str | None = typer.Option(None, "--oa-version", help="Retrieved text: submittedVersion|acceptedVersion|publishedVersion"),
     parent: str | None = typer.Option(None, "--parent", "-p", help="Filter by parent topic"),
+    fetch_provider: str | None = typer.Option(None, "--fetch-provider", help="Actual producing provider"),
+    fetch_route: str | None = typer.Option(None, "--fetch-route", help="Configured intake route"),
+    x_capture: str | None = typer.Option(None, "--x-capture", help="Capture ID, path or checksum"),
+    x_receipt: str | None = typer.Option(None, "--x-receipt", help="Receipt ID, path or checksum"),
+    x_annotation: str | None = typer.Option(None, "--x-annotation", help="Annotation ID, path or checksum"),
+    x_observation: str | None = typer.Option(None, "--x-observation", help="Observation ID, path or checksum"),
+    x_analytics: str | None = typer.Option(None, "--x-analytics", help="Analytics logical ID, path or checksum"),
     after: str | None = typer.Option(None, "--after", help="Created after date (YYYY-MM-DD)"),
     before: str | None = typer.Option(None, "--before", help="Created before date (YYYY-MM-DD)"),
     path_glob: str | None = typer.Option(None, "--path", help="Glob filter on path"),
@@ -77,6 +84,9 @@ def search(
             doi=doi, venue=venue, min_citations=min_citations,
             retraction=retraction, oa_version=oa_version,
             parent=parent,
+            fetch_provider=fetch_provider, fetch_route=fetch_route,
+            x_capture=x_capture, x_receipt=x_receipt, x_annotation=x_annotation,
+            x_observation=x_observation, x_analytics=x_analytics,
             after=after,
             before=before,
             path_glob=path_glob,
@@ -158,13 +168,16 @@ def search(
                 row = vault.db.execute(
                     "SELECT id, title, path, status, type, tier, content_type, "
                     "quality_score, created, updated, word_count, summary, "
-                    "doi, venue, citation_count, is_retracted, oa_version "
+                    "doi, venue, citation_count, is_retracted, oa_version,source,"
+                    "x_evidence,fetch_provider,fetch_route,source_domain,fetched_at "
                     "FROM notes WHERE id = ?",
                     (note_id,),
                 ).fetchone()
                 if row is None:
                     continue
                 r = dict(row)
+                from hyperresearch.core.x_projection import note_evidence_projection
+                r.update(note_evidence_projection(row))
                 if r["is_retracted"] is not None:
                     r["is_retracted"] = bool(r["is_retracted"])
                 r["tags"] = []
@@ -231,10 +244,12 @@ def search(
             return
         for r in results:
             tags_str = ", ".join(r.get("tags", []))
+            from rich.markup import escape
+            from hyperresearch.core.x_projection import terminal_text
             console.print(
-                f"  [cyan]{r['id']}[/] [bold]{r['title']}[/] "
-                f"[dim]({r['status']})[/] [green]{tags_str}[/]"
+                f"  [cyan]{escape(terminal_text(r['id']))}[/] [bold]{escape(terminal_text(r['title']))}[/] "
+                f"[dim]({escape(terminal_text(r['status']))})[/] [green]{escape(terminal_text(tags_str))}[/]"
             )
             if r.get("snippet"):
-                console.print(f"    [dim]{r['snippet'][: vault.config.search_snippet_len]}[/]")
+                console.print(f"    [dim]{escape(terminal_text(r['snippet'][: vault.config.search_snippet_len]))}[/]")
             console.print()

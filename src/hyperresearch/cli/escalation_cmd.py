@@ -115,8 +115,10 @@ def escalation_claim(
 @app.command("ingest")
 def escalation_ingest(
     item_id: int = typer.Argument(..., help="Claimed escalation item id"),
-    title: str = typer.Option(..., "--title", help="Page title"),
-    body_file: str = typer.Option(..., "--body-file", help="File containing the extracted page content (markdown/plain text)"),
+    title: str | None = typer.Option(None, "--title", help="Page title (ordinary browser intake)"),
+    body_file: str | None = typer.Option(None, "--body-file", help="Extracted article content; native X requires a receipt"),
+    receipt_path: str | None = typer.Option(None, "--receipt", help="Canonical native source receipt path"),
+    capture_path: str | None = typer.Option(None, "--capture", help="Canonical native capture path"),
     tags: list[str] = typer.Option([], "--tag", "-t", help="Tags (repeatable; the item's vault_tag is added automatically)"),
     json_output: bool = typer.Option(False, "--json", "-j", help="JSON output"),
 ) -> None:
@@ -142,6 +144,14 @@ def escalation_ingest(
         raise typer.Exit(1)
     item = matching[0]
 
+    from hyperresearch.core.x_projection import is_x_url
+
+    if is_x_url(item["url"]):
+        _ingest_native_x(vault, item, receipt_path, capture_path, tags, json_output)
+        return
+    if not body_file or not title:
+        output(error("Ordinary browser intake requires --title and --body-file", "NO_INPUT"), json_mode=json_output)
+        raise typer.Exit(1)
     body = Path(body_file).read_text(encoding="utf-8-sig")
     url = item["url"]
     domain = urlparse(url).netloc
@@ -174,7 +184,12 @@ def escalation_ingest(
 
     plan = compute_sync_plan(vault)
     if plan.to_add or plan.to_update:
-        execute_sync(vault, plan)
+        sync_result = execute_sync(vault, plan)
+        if sync_result.errors:
+            envelope = error("Note is durable but indexing failed", "INDEX_PROJECTION_FAILED")
+            envelope.data = {"errors": sync_result.errors, "note_id": note_id}
+            output(envelope, json_mode=json_output)
+            raise typer.Exit(1)
 
     content_hash = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
     conn.execute(
@@ -203,6 +218,59 @@ def escalation_ingest(
         output(success(data, vault=str(vault.root)), json_mode=True)
     else:
         console.print(f"[green]Ingested:[/] #{item_id} -> note '{note_id}'")
+
+
+def _ingest_native_x(vault, item, receipt_path, capture_path, tags, json_output):
+    """Recover an already acquired native post, never fabricate Chrome provenance."""
+    from hyperresearch.core.escalation import EscalationError, resolve
+    from hyperresearch.core.x_evidence import EvidenceStore
+    from hyperresearch.web.opencli_provider import NativeSourceError
+
+    try:
+        if not receipt_path:
+            raise NativeSourceError("Native X escalation requires --receipt; extracted reader text is not source evidence")
+        store = EvidenceStore(vault.root)
+        receipt_ref = store.ref_from_path(receipt_path)
+        store.get_record(receipt_ref, "source-receipt")
+        candidates = store.resolve_closure([receipt_ref])
+        post_id = item["url"].split("/status/")[-1].split("/")[0]
+        capture_ref = store.ref_from_path(capture_path) if capture_path else next(
+            (record["ref"] for record in candidates if record["kind"] == "source-capture" and record["payload"]["post_id"] == post_id), None,
+        )
+        if capture_ref is None or store.get_record(capture_ref, "source-capture")["post_id"] != post_id:
+            raise NativeSourceError("Receipt closure contains no matching escalation post", "X_SOURCE_SCOPE")
+        materialized = store.materialize_capture(capture_ref, receipt_ref)
+        if materialized["errors"]:
+            raise NativeSourceError("Native evidence and note are durable but indexing failed", "INDEX_PROJECTION_FAILED", materialized)
+        if tags or item["vault_tag"] or item["suggested_by"]:
+            from hyperresearch.cli.batch import _update_file_frontmatter
+            from hyperresearch.core.sync import compute_sync_plan, execute_sync
+
+            if item["suggested_by"]:
+                from hyperresearch.core.note import read_note
+                from hyperresearch.core.frontmatter import render_note
+                from hyperresearch.core.x_artifacts import atomic_write
+                from hyperresearch.core.x_projection import inert_markdown
+
+                path = vault.root / materialized["path"]
+                note = read_note(path, vault.root)
+                lineage = f"*Suggested by [[{inert_markdown(item['suggested_by'])}]]*\n\n"
+                if not note.body.startswith(lineage):
+                    atomic_write(path, render_note(note.meta, lineage + note.body).encode("utf-8"))
+            for tag in [*tags, *([item["vault_tag"]] if item["vault_tag"] else [])]:
+                _update_file_frontmatter(vault.root, materialized["path"], {"add_tag": tag})
+            synced = execute_sync(vault, compute_sync_plan(vault))
+            if synced.errors:
+                raise NativeSourceError("Native note tag projection failed", "INDEX_PROJECTION_FAILED", {"errors": synced.errors})
+        resolved = resolve(vault.db, item["id"], "fetched", note_id=materialized["note_id"], vault=vault)
+        output(success({**materialized, "item": resolved}, vault=str(vault.root)), json_mode=json_output)
+    except (ValueError, RuntimeError, EscalationError) as exc:
+        code = getattr(exc, "code", "X_SOURCE_SCHEMA")
+        resolve(vault.db, item["id"], "queued", detail=code)
+        envelope = error(str(exc), code)
+        envelope.data = getattr(exc, "result", None)
+        output(envelope, json_mode=json_output)
+        raise typer.Exit(1) from exc
 
 
 @app.command("human")

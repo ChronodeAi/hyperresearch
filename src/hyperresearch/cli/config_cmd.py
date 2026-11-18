@@ -1,6 +1,9 @@
 """Configuration CLI commands."""
 
 from __future__ import annotations
+import json
+from dataclasses import asdict, fields, replace
+
 
 import typer
 
@@ -8,6 +11,44 @@ from hyperresearch.cli._output import console, output
 from hyperresearch.models.output import success
 
 app = typer.Typer()
+
+_KEY_MAP = {
+    "vault.name": "name",
+    "vault.research_dir": "research_dir",
+    "web.provider": "web_provider",
+    "web.profile": "web_profile",
+    "web.magic": "web_magic",
+    "search.boost_evergreen": "search_boost_evergreen",
+    "search.penalize_deprecated": "search_penalize_deprecated",
+    "sync.auto_sync": "auto_sync",
+    "index.auto_build": "auto_build_index",
+}
+
+
+def _x_key(config, key: str) -> str | None:
+    if not key.startswith("x."):
+        return None
+    name = key.removeprefix("x.")
+    if name not in {item.name for item in fields(config.x)}:
+        raise typer.BadParameter(f"Unknown native X configuration key: {key}")
+    return name
+
+
+def _coerce_x_value(current, value: str):
+    if isinstance(current, bool):
+        normalized = value.lower()
+        if normalized not in {"true", "false", "1", "0", "yes", "no"}:
+            raise ValueError("expected true or false")
+        return normalized in {"true", "1", "yes"}
+    if isinstance(current, int):
+        return int(value, 10)
+    if isinstance(current, tuple):
+        decoded = json.loads(value)
+        if not isinstance(decoded, list):
+            raise ValueError("expected a JSON argv array")
+        return tuple(decoded)
+    return value
+
 
 
 @app.command("show")
@@ -31,6 +72,7 @@ def config_show(
         "auto_build_index": config.auto_build_index,
         "search_boost_evergreen": config.search_boost_evergreen,
         "search_penalize_deprecated": config.search_penalize_deprecated,
+        "x": asdict(config.x),
     }
 
     if json_output:
@@ -53,30 +95,20 @@ def config_set(
     vault = Vault.discover()
     config = vault.config
 
-    # Map dot-notation keys to config attributes
-    key_map = {
-        "vault.name": "name",
-        "vault.research_dir": "research_dir",
-        "web.provider": "web_provider",
-        "web.profile": "web_profile",
-        "web.magic": "web_magic",
-        "search.boost_evergreen": "search_boost_evergreen",
-        "search.penalize_deprecated": "search_penalize_deprecated",
-        "sync.auto_sync": "auto_sync",
-        "index.auto_build": "auto_build_index",
-    }
-
-    attr = key_map.get(key)
-    if not attr:
-        console.print(f"[red]Unknown config key:[/] {key}")
-        console.print(f"[dim]Valid keys: {', '.join(key_map.keys())}[/]")
-        raise typer.Exit(1)
-
-    # Type coercion
-    if attr in ("auto_sync", "auto_build_index", "web_magic"):
-        value = value.lower() in ("true", "1", "yes")
-
-    setattr(config, attr, value)
+    x_key = _x_key(config, key)
+    if x_key is not None:
+        try:
+            value = _coerce_x_value(getattr(config.x, x_key), value)
+            config.x = replace(config.x, **{x_key: value})
+        except (ValueError, TypeError) as exc:
+            raise typer.BadParameter(f"Invalid {key}: {exc}") from exc
+    else:
+        attr = _KEY_MAP.get(key)
+        if not attr:
+            raise typer.BadParameter(f"Unknown config key: {key}")
+        if attr in ("auto_sync", "auto_build_index", "web_magic"):
+            value = value.lower() in ("true", "1", "yes")
+        setattr(config, attr, value)
     config.save(vault.config_path)
 
     if json_output:
@@ -96,24 +128,11 @@ def config_get(
     vault = Vault.discover()
     config = vault.config
 
-    key_map = {
-        "vault.name": "name",
-        "vault.research_dir": "research_dir",
-        "web.provider": "web_provider",
-        "web.profile": "web_profile",
-        "web.magic": "web_magic",
-        "search.boost_evergreen": "search_boost_evergreen",
-        "search.penalize_deprecated": "search_penalize_deprecated",
-        "sync.auto_sync": "auto_sync",
-        "index.auto_build": "auto_build_index",
-    }
-
-    attr = key_map.get(key)
-    if not attr:
-        console.print(f"[red]Unknown config key:[/] {key}")
-        raise typer.Exit(1)
-
-    value = getattr(config, attr)
+    x_key = _x_key(config, key)
+    attr = _KEY_MAP.get(key)
+    if x_key is None and attr is None:
+        raise typer.BadParameter(f"Unknown config key: {key}")
+    value = getattr(config.x, x_key) if x_key is not None else getattr(config, attr)
 
     if json_output:
         output(success({"key": key, "value": value}, vault=str(vault.root)), json_mode=True)

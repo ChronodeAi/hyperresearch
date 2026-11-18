@@ -163,6 +163,9 @@ class BuiltinProvider:
         self._settings = settings or FetchSettings()
 
     def fetch(self, url: str) -> WebResult:
+        from hyperresearch.web.base import require_article_url
+
+        require_article_url(url)
         # PDF detection by URL shape: download directly, extract with pymupdf.
         # A miss falls through to the HTML lane (the URL may be a landing page)
         # and the reason travels with the result for the junk gate to report.

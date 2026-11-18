@@ -49,10 +49,12 @@ def _get_matching_notes(vault, status=None, tag=None, parent=None, note_type=Non
 
     where = " AND ".join(clauses)
     rows = vault.db.execute(
-        f"SELECT n.id, n.path, n.title FROM notes n WHERE {where} ORDER BY n.title",
+        f"SELECT n.id,n.path,n.title,n.source,n.x_evidence,n.fetch_provider,n.fetch_route,n.source_domain,n.fetched_at FROM notes n WHERE {where} ORDER BY n.title",
         params,
     ).fetchall()
-    return [dict(r) for r in rows]
+    from hyperresearch.core.x_projection import note_evidence_projection
+
+    return [{**dict(row), **note_evidence_projection(row)} for row in rows]
 
 
 def _batch_update_files(vault, notes: list[dict], updates: dict) -> tuple[list[str], list[dict]]:
@@ -69,7 +71,8 @@ def _batch_update_files(vault, notes: list[dict], updates: dict) -> tuple[list[s
     if modified:
         from hyperresearch.core.sync import compute_sync_plan, execute_sync
         plan = compute_sync_plan(vault, force=True)
-        execute_sync(vault, plan)
+        result = execute_sync(vault, plan)
+        errors.extend(result.errors)
     return modified, errors
 
 
@@ -92,7 +95,12 @@ def _update_file_frontmatter(vault_root: Path, rel_path: str, updates: dict) -> 
 
     meta.updated = datetime.now(UTC)
     new_content = serialize_frontmatter(meta) + "\n" + body
-    file_path.write_text(new_content, encoding="utf-8")
+    if meta.x_evidence is not None:
+        from hyperresearch.core.x_artifacts import atomic_write
+
+        atomic_write(file_path, new_content.encode("utf-8"))
+    else:
+        file_path.write_text(new_content, encoding="utf-8")
 
 
 # --- Tag operations ---

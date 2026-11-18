@@ -51,6 +51,65 @@
 Browse the vault by DOI, venue, citation count, retraction status, or retrieved
 manuscript version with [scholarly metadata filters](docs/source-search.md).
 
+## Continuous X research
+
+The `hpr x` commands are separate from the 16-step report pipeline. An agent
+proposes a versioned `MonitorPlan`; deterministic code validates its advanced
+queries, finite schedule, budgets and criteria. OpenCLI owns native browser
+acquisition. Optional Jev classifies supplied captures; it does not crawl X.
+This is bounded polling, not a firehose or a latency guarantee.
+
+```bash
+hpr x schema --kind monitor-plan --json
+hpr x plan --file monitor-proposal.json --dry-run --json
+hpr x plan --file monitor-proposal.json --json
+hpr x monitor --plan PLAN_REFERENCE --approval GRANT_REFERENCE --stop-after 30m --json
+hpr x status --monitor MONITOR_ID --json
+hpr x stop --monitor MONITOR_ID --json
+hpr x monitor --resume MONITOR_ID --approval GRANT_REFERENCE --json
+hpr x analytics --monitor MONITOR_ID --window 5m --json
+hpr x replay --monitor MONITOR_ID --evaluation-time UTC_TIMESTAMP --json
+hpr x export --monitor MONITOR_ID --path evidence-export.json --json
+hpr x import --path evidence-export.json --json
+```
+
+`PLAN_REFERENCE` is the emitted checksum-bound artifact reference or its record
+file. `GRANT_REFERENCE` resolves beneath the protected grant root, not arbitrary
+agent-written approval text. `[x] enabled` defaults to `false`; configure the
+matched OpenCLI command and root-protected public trust store before acquisition.
+The verifier only verifies Ed25519 approvals: it generates no key, signs nothing,
+and supplies no trading authority. Read permission does not grant paid model
+usage, source-data export, market/chain collection or actor attribution.
+
+Profiles are `generic-sentiment`, `crypto-discovery` and `market-flow`. Unknown
+sentiment is not neutral. Token leads require chain/address identity, explicit
+market-cap versus FDV and liquidity units, coherent independent observations
+and freshness. Social claims alone cannot prove a quality token or market maker.
+Removed/repaired evidence produces correction lineage instead of duplicate volume.
+
+Canonical raw artifacts and records are durable before Markdown/SQLite
+projections. Resume preserves the original deadline and cumulative reservations;
+ambiguous source execution or billing remains held. Expired source recovery is
+local-only. Replay/export/import emit no external requests and cannot elevate
+imported self-declared provider evidence into verified live-origin facts.
+
+Jev is optional (`uv pip install -e '.[jev]'` in a source checkout, pinned to
+`typesafe-sdk==0.7.4`). Model dispatch requires a separately approved endpoint,
+model, export fields/redactions and attested billing envelope. The SDK has no
+native hard dollar/token cap; worst-case reservations and unknown-spend holds
+are admission controls, not provider-enforced limits.
+
+Install just the managed monitor recipe without changing hooks or browser state:
+
+```bash
+hpr x install-skill --platform omp --scope user --dry-run --json
+hpr x install-skill --platform omp --scope user --json
+```
+
+It records renderer/resource/delivery hashes and refuses custom or symlinked
+destinations. Invoke `/skill:hyperresearch-x-monitor` after discovery refresh.
+Offline checks do not establish live speed, accuracy, coverage or trading edge.
+
 ## Install
 
 Works in **Claude Code** and **OpenAI Codex**: same pipeline, same vault.
@@ -144,7 +203,7 @@ What is different on OMP:
 - **Subagents run on the session's model**, Claude or OpenAI, at a thinking level set per role. Route individual agents to other models with OMP's own `task.agentModelOverrides`.
 - **Tool locks are enforced.** OMP agents carry a tool allowlist, as on Claude Code: the patcher and polish auditor get only `read` and `edit`.
 - **No browser lane.** As on Codex, blocked fetches stay in the escalation queue and are listed in the final message.
-- **The stop gate is an extension.** It acts only in a session that has run `hyperresearch run init` or `run step` itself. When such a session tries to stop mid-pipeline, OMP continues it with the next step. OMP caps these continuations, and `HYPERRESEARCH_STOP_GATE=0` turns the gate off.
+- **The stop gate is an extension.** It arms only after this session successfully runs `hyperresearch run init` or `run step`. It tracks that command's vault tag and working directory (including a bash `cwd` override), and passes `--vault-tag` to the CLI. Only the bound run can request continuation: a finished run cannot join newer parallel research, and an active bound run is not hidden by a newer finished one. Session start/switch clears both bindings. Restart OMP after updating the extension. OMP caps these continuations, and `HYPERRESEARCH_STOP_GATE=0` turns the gate off.
 
 ---
 
@@ -313,6 +372,8 @@ hyperresearch claims search "q" -j         # Query extracted claims across all s
 ```
 
 Retracted sources are floored to near-zero quality, and a ship-time retraction sweep re-checks every cited DOI fresh, so a retraction published yesterday is caught today. Even on vault sources reused from old runs.
+
+Metadata enrichment commits each completed note before the next API request or rate-limit wait. Concurrent OMP readers can sync the same vault without waiting for the entire sweep; rate-limited or missing metadata still remains unresolved, not an all-clear.
 
 ---
 

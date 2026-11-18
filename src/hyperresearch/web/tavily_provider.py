@@ -76,6 +76,9 @@ class TavilyProvider:
 
     def fetch(self, url: str) -> WebResult:
         """Fetch a single URL via Tavily extract and return clean text."""
+        from hyperresearch.web.base import require_article_url
+
+        require_article_url(url)
         response = self._client.extract(urls=[url])
         results = response.get("results", [])
         if not results:

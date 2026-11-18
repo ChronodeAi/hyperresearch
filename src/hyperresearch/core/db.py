@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 14
 
 SCHEMA_SQL = """
 PRAGMA journal_mode=WAL;
@@ -60,7 +60,13 @@ CREATE TABLE IF NOT EXISTS notes (
     oa_license       TEXT,
     -- v12. substituted = a thin page was replaced; rescued = the source was
     -- never read at all and the whole note is the open-access copy.
-    oa_recovery_kind TEXT
+    oa_recovery_kind TEXT,
+    x_evidence      TEXT,
+    fetch_route     TEXT,
+    fetch_provider  TEXT,
+    source_domain   TEXT,
+    fetched_at      TEXT,
+    metadata_json   TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_notes_status ON notes(status);
@@ -199,6 +205,25 @@ CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);
 
 """
 
+# Canonical records live on disk; these views are disposable history projections.
+X_EVIDENCE_SQL = """
+CREATE TABLE IF NOT EXISTS x_records (
+    path TEXT PRIMARY KEY,
+    sha256 TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    artifact_root TEXT,
+    payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_x_records_kind ON x_records(kind);
+CREATE VIEW IF NOT EXISTS x_captures AS SELECT * FROM x_records WHERE kind='source-capture';
+CREATE VIEW IF NOT EXISTS x_receipts AS SELECT * FROM x_records WHERE kind='source-receipt';
+CREATE VIEW IF NOT EXISTS x_annotations AS SELECT * FROM x_records WHERE kind='analysis-annotation';
+CREATE VIEW IF NOT EXISTS x_observations AS SELECT * FROM x_records WHERE kind='verified-observation';
+CREATE VIEW IF NOT EXISTS x_analytics AS SELECT * FROM x_records WHERE kind='analytics-event';
+CREATE VIEW IF NOT EXISTS x_occurrences AS
+    SELECT path,sha256,json_extract(payload,'$.occurrence') AS occurrence FROM x_captures;
+"""
+
 FTS_SQL = """
 CREATE VIRTUAL TABLE IF NOT EXISTS notes_fts USING fts5(
     id UNINDEXED,
@@ -250,6 +275,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     # Run any pending migrations (may ALTER TABLE to add new columns)
     from hyperresearch.core.migrations import migrate
     migrate(conn, SCHEMA_VERSION)
+    conn.executescript(X_EVIDENCE_SQL)
 
     # Indexes that depend on migration-added columns run last
     conn.executescript(POST_MIGRATE_INDEXES_SQL)

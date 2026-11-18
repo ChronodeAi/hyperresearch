@@ -35,6 +35,7 @@ def fetch_batch(
     from hyperresearch.core.sync import compute_sync_plan, execute_sync
     from hyperresearch.core.vault import Vault, VaultError
     from hyperresearch.web.base import get_provider, served_by
+    from hyperresearch.core.x_projection import is_x_url
 
     # Collect URLs from args and/or stdin
     all_urls = list(urls or [])
@@ -75,6 +76,7 @@ def fetch_batch(
         magic=vault.config.web_magic,
         settings=vault.config.fetch,
         gates=vault.config.junk,
+        vault=vault,
     )
 
     # Filter out already-fetched URLs
@@ -99,8 +101,9 @@ def fetch_batch(
         console.print(f"[bold]Fetching {len(new_urls)} URLs with {prov.name}...[/]")
 
     # Split URLs into normal (headless batch) and auth-aggressive (visible, sequential)
-    normal_urls = [u for u in new_urls if not _needs_visible(u)]
-    visible_urls = [u for u in new_urls if _needs_visible(u)]
+    native_urls = [url for url in new_urls if is_x_url(url)]
+    normal_urls = [u for u in new_urls if not is_x_url(u) and not _needs_visible(u)]
+    visible_urls = [u for u in new_urls if not is_x_url(u) and _needs_visible(u)]
 
     results = []
     failed_urls: list[dict] = []  # surfaced in JSON output so callers see what was lost
@@ -109,9 +112,15 @@ def fetch_batch(
         try:
             results.append(provider.fetch(url))
         except Exception as exc:
-            failed_urls.append({"url": url, "error": str(exc), "phase": kind})
+            failed_urls.append({"url": url, "error": str(exc), "phase": kind,
+                                "error_code": getattr(exc, "code", "FETCH_ERROR"),
+                                "source_outcome": getattr(exc, "result", None)})
             if not json_output:
                 console.print(f"  [red]Failed ({kind}):[/] {url} — {exc}")
+
+    # The native source owns serialization; never retry it via an article batch fallback.
+    for url in native_urls:
+        _fetch_one(prov, url, "native")
 
     # Batch fetch normal URLs
     if normal_urls:
@@ -142,6 +151,7 @@ def fetch_batch(
             headless=False,
             settings=vault.config.fetch,
             gates=vault.config.junk,
+            vault=vault,
         )
         for url in visible_urls:
             _fetch_one(visible_prov, url, "visible")
@@ -163,6 +173,8 @@ def fetch_batch(
 
     rescued_urls: set[str] = set()
     for burl, reason, raw_html in blocked:
+        if is_x_url(burl):
+            continue
         # URL and meta tags only — a wall page's body carries no DOI worth
         # trusting.
         rescued, loc = rescue_full_text(vault, prov, burl, extract_doi(burl, raw_html, None))
@@ -193,10 +205,11 @@ def fetch_batch(
         # to be repeated here — and they matter more here, because the pipeline
         # fetches in waves through this command.
         if oa_location is None:
-            detected_doi = extract_doi(url, result.raw_html, result.content)
+            detected_doi = None if result.metadata.get("x_evidence") else extract_doi(url, result.raw_html, result.content)
             original_domain = result.domain
             original_chars = len(result.content or "")
-            result, oa_location = recover_full_text(vault, prov, url, detected_doi, result)
+            if not result.metadata.get("x_evidence"):
+                result, oa_location = recover_full_text(vault, prov, url, detected_doi, result)
         else:
             # Rescued: nothing was read from the source, so its domain comes
             # from the URL and there is no original length to report.
@@ -213,6 +226,9 @@ def fetch_batch(
             "fetched_at": result.fetched_at.isoformat(),
             "fetch_provider": served_by(prov, result),
         }
+        extra_meta["fetch_route"] = prov.name
+        if result.metadata.get("x_evidence") is not None:
+            extra_meta["x_evidence"] = result.metadata["x_evidence"]
         if detected_doi:
             extra_meta["doi"] = detected_doi
 
@@ -266,20 +282,26 @@ def fetch_batch(
     # Phase 2: ONE sync to index all notes
     plan = compute_sync_plan(vault)
     if plan.to_add or plan.to_update:
-        execute_sync(vault, plan)
+        sync_result = execute_sync(vault, plan)
+        if sync_result.errors:
+            failed_urls.extend({"url": None, "phase": "index", **err} for err in sync_result.errors)
 
     # Phase 3: Bulk-insert source records
     created_notes = []
     for note_path, url, result, domain, content_hash, oa_location, rescue_reason in note_files:
         note_id = note_path.stem
+        if conn.execute("SELECT 1 FROM notes WHERE id=?", (note_id,)).fetchone() is None:
+            failed_urls.append({"url": url, "phase": "index", "error_code": "INDEX_PROJECTION_FAILED",
+                                "path": str(note_path), "error": "Note file is durable but not indexed"})
+            continue
         conn.execute(
             """INSERT OR IGNORE INTO sources (url, note_id, domain, fetched_at, provider, content_hash)
                VALUES (?, ?, ?, ?, ?, ?)""",
-            (url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash),
+            (url, note_id, domain, result.fetched_at.isoformat(), served_by(prov, result), content_hash),
         )
         # The INSERT is also a no-op on an orphaned row (note deleted); claim it
         reclaim_orphaned_source_row(
-            conn, url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash
+            conn, url, note_id, domain, result.fetched_at.isoformat(), served_by(prov, result), content_hash
         )
 
         # Save assets if requested
@@ -300,6 +322,11 @@ def fetch_batch(
             "domain": domain,
             "word_count": len(result.content.split()),
         }
+        entry["provider"] = served_by(prov, result)
+        entry["fetch_route"] = prov.name
+        if result.metadata.get("x_evidence") is not None:
+            entry["x_evidence"] = result.metadata["x_evidence"]
+            entry["source_outcome"] = result.metadata["x_operation"]
         if oa_location is not None:
             entry["oa"] = {
                 "url": oa_location.url,

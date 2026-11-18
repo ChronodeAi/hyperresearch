@@ -83,6 +83,9 @@ class SerplyProvider:
 
     def fetch(self, url: str) -> WebResult:
         """Fetch a single URL via Serply and return it as Markdown."""
+        from hyperresearch.web.base import require_article_url
+
+        require_article_url(url)
         resp = self._client.post(_FETCH_URL, json={"url": url, "response_type": "markdown"})
         resp.raise_for_status()
         content = resp.text.strip()[: self._max_characters]

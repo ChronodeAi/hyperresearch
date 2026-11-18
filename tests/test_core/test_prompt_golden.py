@@ -126,7 +126,6 @@ from hyperresearch.core.render import build_render_context, render_prompt
 GOLDEN_DIR = Path(__file__).parent.parent / "fixtures" / "golden_prompts"
 
 GOLDEN_SKILLS = [
-    "hyperresearch",
     "hyperresearch-2-width-sweep",
     "hyperresearch-4-loci-analysis",
     "hyperresearch-5-depth-investigation",

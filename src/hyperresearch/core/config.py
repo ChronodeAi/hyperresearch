@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import tomllib
-from dataclasses import dataclass, field, fields
+from dataclasses import asdict, dataclass, field, fields
 from pathlib import Path
 
 
@@ -194,6 +195,50 @@ class ScholarSettings:
     oa_rescue_blocked: bool = True
 
 
+@dataclass(frozen=True)
+class XSettings:
+    """Native X research settings; configuration is not acquisition authority."""
+
+    enabled: bool = False
+    command: tuple[str, ...] = ("opencli",)
+    trust_store: str = ""
+    plan_ref: str = ""
+    approval_ref: str = ""
+    source_owner: str = ""
+    source_profile: str = ""
+    poll_interval_s: int = 30
+    lookback_s: int = 600
+    operation_timeout_s: int = 180
+    max_primary: int = 100
+    max_total_captures: int = 200
+    max_pages: int = 10
+    max_source_requests: int = 20
+    session_duration_s: int = 1800
+    max_session_source_requests: int = 300
+    analysis_enabled: bool = False
+    model: str = ""
+    analysis_workers: int = 4
+    max_model_requests: int = 0
+    max_model_tokens: int = 0
+    max_model_cost_usd: str = "0"
+    max_observation_requests: int = 0
+    observation_timeout_s: int = 30
+
+    def __post_init__(self) -> None:
+        from hyperresearch.models.x_evidence import validate_record
+
+        value = asdict(self)
+        value["command"] = list(self.command)
+        validate_record("x-config", value)
+
+
+def _build_x_settings(data: dict) -> XSettings:
+    from hyperresearch.models.x_evidence import validate_record
+
+    validate_record("x-config", data)
+    return _build_section(XSettings, data)
+
+
 def _build_section(section_cls, data: dict):
     """Build a frozen settings dataclass from a TOML section dict.
 
@@ -261,6 +306,7 @@ class VaultConfig:
     embeddings: EmbeddingSettings = field(default_factory=EmbeddingSettings)
     chrome: ChromeSettings = field(default_factory=ChromeSettings)
     scholar: ScholarSettings = field(default_factory=ScholarSettings)
+    x: XSettings = field(default_factory=XSettings)
 
     # Index
     auto_build_index: bool = True
@@ -310,6 +356,7 @@ class VaultConfig:
             embeddings=_build_section(EmbeddingSettings, data.get("embeddings", {})),
             chrome=_build_section(ChromeSettings, data.get("chrome", {})),
             scholar=_build_section(ScholarSettings, data.get("scholar", {})),
+            x=_build_x_settings(data.get("x", {})),
             auto_sync=sync.get("auto_sync", cls.auto_sync),
             exclude_patterns=sync.get("exclude_patterns", cls().exclude_patterns),
             auto_build_index=index.get("auto_build", cls.auto_build_index),
@@ -331,7 +378,7 @@ class VaultConfig:
             inner = ", ".join(f"{k} = {VaultConfig._toml_value(v)}" for k, v in value.items())
             return "{ " + inner + " }"
         if isinstance(value, str):
-            return f'"{value}"'
+            return json.dumps(value, ensure_ascii=False)
         return str(value)
 
     def _section_lines(self, header: str, section, preamble: tuple[str, ...] = ()) -> list[str]:
@@ -378,6 +425,7 @@ class VaultConfig:
         lines += self._section_lines("ranking", self.ranking)
         lines += self._section_lines("embeddings", self.embeddings)
         lines += self._section_lines("chrome", self.chrome)
+        lines += self._section_lines("x", self.x)
         lines += self._section_lines(
             "scholar",
             self.scholar,

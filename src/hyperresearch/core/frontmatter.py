@@ -37,6 +37,7 @@ def parse_frontmatter(content: str) -> tuple[NoteMeta, str]:
 
 def serialize_frontmatter(meta: NoteMeta) -> str:
     """Serialize NoteMeta to YAML frontmatter string."""
+    meta = NoteMeta.model_validate(meta.model_dump(mode="json"))
     data = meta.model_dump(mode="json", exclude_none=True, exclude_defaults=False)
     # Remove empty lists
     for key in ("tags", "aliases"):

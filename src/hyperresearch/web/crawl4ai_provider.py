@@ -295,6 +295,11 @@ class Crawl4AIProvider:
         return AsyncWebCrawler(crawler_strategy=strategy, config=self._browser_config)
 
     def fetch(self, url: str) -> WebResult:
+        from hyperresearch.core.x_projection import is_x_url
+        from hyperresearch.web.opencli_provider import NativeSourceError
+
+        if is_x_url(url):
+            raise NativeSourceError("Public X posts require the governed native source route", "X_SOURCE_POLICY")
         # SSRF gate: reject private/loopback/etc. before any browser or http
         # call. PDF redirects are re-checked hop by hop via safe_get; the
         # browser lanes drive their own navigation, so they get the
@@ -460,6 +465,11 @@ class Crawl4AIProvider:
         return _run_coro(self._fetch_many_async(urls))
 
     async def _fetch_many_async(self, urls: list[str]) -> list[WebResult]:
+        from hyperresearch.core.x_projection import is_x_url
+        from hyperresearch.web.opencli_provider import NativeSourceError
+
+        if any(is_x_url(url) for url in urls):
+            raise NativeSourceError("X posts cannot enter a generic browser batch", "X_SOURCE_POLICY")
         # SSRF gate: same entry-point check as fetch(). Refused URLs are
         # skipped (logged), not fatal — one hostile URL must not kill the
         # whole batch.

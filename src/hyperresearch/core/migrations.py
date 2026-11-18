@@ -311,6 +311,16 @@ def _migrate_v13_nullable_retraction(conn: sqlite3.Connection) -> None:
         conn.execute(f"PRAGMA foreign_keys={int(foreign_keys)}")
 
 
+def _migrate_v14_x_evidence(conn: sqlite3.Connection) -> None:
+    """Add full note provenance and disposable canonical evidence projections."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(notes)")}
+    for name in ("x_evidence", "fetch_route", "fetch_provider", "source_domain", "fetched_at", "metadata_json"):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE notes ADD COLUMN {name} TEXT")
+    # Re-read files instead of inferring successful historical source outcomes.
+    conn.execute("UPDATE notes SET file_mtime=0,content_hash=''")
+
+
 MIGRATIONS: dict[int, str | Callable[[sqlite3.Connection], None]] = {
     2: """
 CREATE TABLE IF NOT EXISTS tag_aliases (
@@ -360,6 +370,7 @@ CREATE INDEX IF NOT EXISTS idx_assets_type ON assets(type);
     11: _migrate_v11_oa_recovery,
     12: _migrate_v12_oa_recovery_kind,
     13: _migrate_v13_nullable_retraction,
+    14: _migrate_v14_x_evidence,
 }
 
 

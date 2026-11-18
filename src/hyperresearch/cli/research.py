@@ -12,6 +12,8 @@ import typer
 from hyperresearch.cli._output import console, output
 from hyperresearch.core.fetcher import existing_live_note_for_url, reclaim_orphaned_source_row
 from hyperresearch.models.output import error, success
+from hyperresearch.core.x_projection import terminal_text
+from rich.markup import escape
 
 
 def research(
@@ -46,6 +48,7 @@ def research(
         provider_name or vault.config.web_provider,
         profile=vault.config.web_profile,
         magic=vault.config.web_magic,
+        vault=vault,
     )
 
     # Step 1: Search
@@ -87,16 +90,23 @@ def research(
     fetched_urls: set[str] = set()
     pages_fetched = 0
 
+    failed_urls: list[dict] = []
     for result in search_results:
         if pages_fetched >= max_pages:
             break
-        note_data = _save_result(vault, conn, prov, result, tags, parent)
+        try:
+            note_data = _save_result(vault, conn, prov, result, tags, parent)
+        except Exception as exc:
+            failed_urls.append({"url": result.url, "error": str(exc),
+                                "error_code": getattr(exc, "code", "FETCH_ERROR"),
+                                "source_outcome": getattr(exc, "result", None)})
+            continue
         if note_data:
             created_notes.append(note_data)
             fetched_urls.add(result.url)
             pages_fetched += 1
             if not json_output:
-                console.print(f"  [green]+[/] {note_data['title']}")
+                console.print(f"  [green]+[/] {escape(terminal_text(note_data['title']))}")
 
     # Step 3: Follow links (depth > 0)
     if depth > 0 and pages_fetched < max_pages:
@@ -123,10 +133,13 @@ def research(
                         fetched_urls.add(link_url)
                         pages_fetched += 1
                         if not json_output:
-                            console.print(f"  [dim]+[/] {note_data['title']} [dim](depth {d + 1})[/]")
+                            console.print(f"  [dim]+[/] {escape(terminal_text(note_data['title']))} [dim](depth {d + 1})[/]")
                         # Collect links from this page for next depth
                         next_links.extend(_extract_links_from_results([result]))
-                except Exception:
+                except Exception as exc:
+                    failed_urls.append({"url": link_url, "error": str(exc),
+                                        "error_code": getattr(exc, "code", "FETCH_ERROR"),
+                                        "source_outcome": getattr(exc, "result", None)})
                     continue
             links_to_follow = [u for u in next_links if u not in fetched_urls]
 
@@ -205,7 +218,7 @@ def research(
         if hubs and not json_output:
             console.print("\n[bold]Hub notes[/] (most connected):")
             for h in hubs:
-                console.print(f"  [{h['inbound_links']} links] [[{h['id']}]] {h['title']}")
+                console.print(f"  {h['inbound_links']} links: {escape(terminal_text(h['id']))} {escape(terminal_text(h['title']))}")
 
     # Output
     data = {
@@ -215,6 +228,7 @@ def research(
         "total_fetched": pages_fetched,
         "depth": depth,
         "hubs": hubs,
+        "failed_urls": failed_urls,
     }
 
     if json_output:
@@ -232,6 +246,10 @@ def _save_result(vault, conn, prov, result, tags, parent) -> dict | None:
     from hyperresearch.web.base import served_by
 
     url = result.url
+    from hyperresearch.core.x_projection import is_x_url
+
+    if is_x_url(url) and result.metadata.get("x_evidence") is None:
+        result = prov.fetch(url)
 
     # Skip login redirects
     if result.looks_like_login_wall(url):
@@ -251,6 +269,9 @@ def _save_result(vault, conn, prov, result, tags, parent) -> dict | None:
         "fetched_at": result.fetched_at.isoformat(),
         "fetch_provider": served_by(prov, result),
     }
+    extra_meta["fetch_route"] = prov.name
+    if result.metadata.get("x_evidence") is not None:
+        extra_meta["x_evidence"] = result.metadata["x_evidence"]
 
     note_path = write_note(
         vault.notes_dir,
@@ -274,16 +295,18 @@ def _save_result(vault, conn, prov, result, tags, parent) -> dict | None:
     note_id = note_path.stem
     plan = compute_sync_plan(vault)
     if plan.to_add or plan.to_update:
-        execute_sync(vault, plan)
+        sync_result = execute_sync(vault, plan)
+        if sync_result.errors:
+            raise RuntimeError(f"Note is durable but indexing failed: {sync_result.errors}")
 
     conn.execute(
         """INSERT OR IGNORE INTO sources (url, note_id, domain, fetched_at, provider, content_hash)
            VALUES (?, ?, ?, ?, ?, ?)""",
-        (url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash),
+        (url, note_id, domain, result.fetched_at.isoformat(), served_by(prov, result), content_hash),
     )
     # The INSERT is also a no-op on an orphaned row (note deleted); claim it
     reclaim_orphaned_source_row(
-        conn, url, note_id, domain, result.fetched_at.isoformat(), prov.name, content_hash
+        conn, url, note_id, domain, result.fetched_at.isoformat(), served_by(prov, result), content_hash
     )
     conn.commit()
 
@@ -295,6 +318,10 @@ def _save_result(vault, conn, prov, result, tags, parent) -> dict | None:
         "path": str(note_path.relative_to(vault.root)),
         "word_count": len(result.content.split()),
         "summary": result.content[:120].replace("\n", " ").strip(),
+        "provider": served_by(prov, result),
+        "fetch_route": prov.name,
+        "x_evidence": extra_meta.get("x_evidence"),
+        "source_outcome": result.metadata.get("x_operation"),
     }
 
 
@@ -303,6 +330,11 @@ def _extract_links_from_results(results) -> list[str]:
     urls = []
     url_re = re.compile(r'https?://[^\s<>\[\]"\']+')
     for r in results:
+        # Native post text is data, not permission to acquire embedded URLs.
+        from hyperresearch.core.x_projection import is_x_url
+
+        if r.metadata.get("x_evidence") or is_x_url(r.url):
+            continue
         for match in url_re.finditer(r.content):
             url = match.group(0).rstrip(".,;:)")
             # Skip common noise

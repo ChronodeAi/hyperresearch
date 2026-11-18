@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
 from pathlib import Path
 
 import typer
@@ -30,47 +29,24 @@ def import_vault(
         raise typer.Exit(1)
 
     source_path = Path(source).resolve()
-    if not source_path.is_dir():
-        msg = f"Source directory not found: {source}"
-        if json_output:
-            output(error(msg, "NOT_FOUND"), json_mode=True)
+    from hyperresearch.core.note_transport import import_json_notes, import_markdown_notes
+
+    try:
+        if source_path.is_file() and source_path.suffix == ".json":
+            imported = import_json_notes(vault, source_path, prefix, dry_run)
+        elif source_path.is_dir():
+            imported = import_markdown_notes(vault, source_path, prefix, dry_run)
         else:
-            console.print(f"[red]{msg}[/]")
-        raise typer.Exit(1)
-
-    # Find all .md files in source
-    md_files = sorted(source_path.rglob("*.md"))
-    # Skip .hyperresearch/, templates/ etc. from source
-    skip_dirs = {".hyperresearch", ".git", ".venv", "node_modules", "templates"}
-    md_files = [
-        f for f in md_files
-        if not any(part in skip_dirs for part in f.relative_to(source_path).parts)
-    ]
-
-    if not md_files:
-        if json_output:
-            output(success({"imported": [], "count": 0}, vault=str(vault.root)), json_mode=True)
-        else:
-            console.print("[dim]No markdown files found in source.[/]")
-        return
-
-    imported = []
-    for src_file in md_files:
-        rel = src_file.relative_to(source_path).as_posix()
-        dest_rel = f"{prefix}/{rel}" if prefix else rel
-        # Write into research/notes/, not vault root
-        dest = vault.notes_dir / dest_rel
-
-        imported.append({"source": rel, "destination": dest_rel})
-
+            raise ValueError(f"Import source not found: {source}")
         if not dry_run:
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src_file, dest)
+            from hyperresearch.core.sync import compute_sync_plan, execute_sync
 
-    if not dry_run:
-        from hyperresearch.core.sync import compute_sync_plan, execute_sync
-        plan = compute_sync_plan(vault)
-        execute_sync(vault, plan)
+            result = execute_sync(vault, compute_sync_plan(vault))
+            if result.errors:
+                raise ValueError(f"Imported artifacts and notes are durable but indexing failed: {result.errors}")
+    except (ValueError, OSError) as exc:
+        output(error(str(exc), "IMPORT_VALIDATION"), json_mode=json_output)
+        raise typer.Exit(1) from exc
 
     if json_output:
         action = "would_import" if dry_run else "imported"

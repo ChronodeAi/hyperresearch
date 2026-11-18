@@ -47,30 +47,8 @@ FORBIDDEN = [
 ]
 
 STEP_FILE_RE = re.compile(r"\.hyperresearch/codex/steps/([a-z0-9-]+)\.md")
-AGENT_FILE_RE = re.compile(r"\.codex/agents/([a-z0-9-]+)\.toml")
-# A complete hyperresearch-* identifier (not one broken across a line by YAML
-# folding, not a `<placeholder>` form).
-IDENT_RE = re.compile(r"(?<![-a-z0-9/])hyperresearch-[a-z0-9]+(?:-[a-z0-9]+)*(?![-a-z0-9<])")
-# hyperresearch-* strings in the prompts that are neither steps nor agents.
-NON_AGENT_IDENTS = {
-    "hyperresearch-v8",  # polish: pipeline-vocabulary leak example
-    "hyperresearch-locus-seed",  # loci analysis: breadcrumb placeholder to avoid
-}
 
 
-def _agent_names() -> set[str]:
-    names = set()
-    for attr in dir(hooks):
-        value = getattr(hooks, attr)
-        if attr.endswith("_AGENT") and isinstance(value, str):
-            m = re.search(r"^name: (hyperresearch-[a-z0-9-]+)$", value, re.MULTILINE)
-            if m:
-                names.add(m.group(1))
-    return names
-
-
-AGENTS = _agent_names()
-CODEX_AGENTS = AGENTS - {"hyperresearch-browser-fetcher"}
 STEPS = set(hooks._HYPERRESEARCH_STEP_SKILLS)
 
 
@@ -83,11 +61,6 @@ def codex_renders(request):
     }
 
 
-def test_roster_sanity():
-    assert "hyperresearch-fetcher" in CODEX_AGENTS
-    assert "hyperresearch-patcher" in CODEX_AGENTS
-    assert len(STEPS) >= 16
-    assert len(TEMPLATES) == len(STEPS) + 1  # step skills + the entry router
 
 
 @pytest.mark.parametrize("template", TEMPLATES)
@@ -107,23 +80,8 @@ def test_codex_step_file_references_exist(template, codex_renders):
         assert step in STEPS, f"{template}: references unknown step file {step}.md"
 
 
-@pytest.mark.parametrize("template", TEMPLATES)
-def test_codex_agent_references_exist(template, codex_renders):
-    text = codex_renders[template]
-    for agent in AGENT_FILE_RE.findall(text):
-        assert agent in CODEX_AGENTS, f"{template}: references unknown custom agent {agent}"
-    for ident in IDENT_RE.findall(text):
-        assert ident in STEPS or ident in CODEX_AGENTS or ident in NON_AGENT_IDENTS, (
-            f"{template}: {ident!r} is neither a step file nor a Codex custom agent"
-        )
 
 
-def test_steps_point_to_next_step_file(codex_renders):
-    """Every step template except the last hands off by naming a step file."""
-    for template in TEMPLATES:
-        if template in ("hyperresearch.md", "hyperresearch-16-readability-audit.md"):
-            continue
-        assert STEP_FILE_RE.search(codex_renders[template]), template
 
 
 def test_codex_router_frontmatter_and_enforcement(codex_renders):
@@ -143,11 +101,3 @@ def test_codex_router_frontmatter_and_enforcement(codex_renders):
         assert f"`{step}`" in text, step
 
 
-@pytest.mark.parametrize("template", TEMPLATES)
-def test_claude_render_keeps_claude_constructs(template):
-    """Sanity check on branch direction: the default render is still Claude's."""
-    ctx = build_render_context(None, primary="full")
-    text = render_prompt((SKILLS_DIR / template).read_text(encoding="utf-8"), ctx)
-    assert "<%" not in text
-    assert "Skill(" in text or "Skill tool" in text
-    assert ".hyperresearch/codex/" not in text

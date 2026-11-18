@@ -225,18 +225,20 @@ _EXTENSION_TEMPLATE = """\
 // Keeps an OMP session on the hyperresearch pipeline it is running. The
 // orchestrator records every step with `hyperresearch run init` / `run step`;
 // once this session has run one of those, its `session_stop` asks
-// `hyperresearch run stop-gate` whether the newest run in the session's vault is
-// mid-pipeline and, if so, sends the agent back to the next step. OMP caps these
+// `hyperresearch run stop-gate` whether this session's observed run is
+// mid-pipeline and, if so, sends the agent back to its next step. OMP caps these
 // advisory continuations. Sessions that never ran the pipeline are left alone,
 // so a vault in a parent directory cannot pull unrelated sessions into a run.
 // Set HYPERRESEARCH_STOP_GATE=0 to turn the gate off.
 
+import { resolve } from "node:path";
+
 const HPR = __HPR__;
-const RUN_COMMAND = /\\b(?:hyperresearch|hpr)\\b[^\\n]*\\brun\\s+(?:init|step)\\b/;
+const RUN_COMMAND = /(?:^|[\\s;&|()])(?:\\/[^\\s"';&|()]*\\/)?(?:hyperresearch|hpr)\\s+run\\s+(?:init|step)\\s+(?:"([a-zA-Z0-9][a-zA-Z0-9._-]*)"|'([a-zA-Z0-9][a-zA-Z0-9._-]*)'|([a-zA-Z0-9][a-zA-Z0-9._-]*))(?=$|[\\s;&|()])/g;
 
 interface ToolResultEvent {
   toolName?: string;
-  input?: { command?: unknown };
+  input?: { command?: unknown; cwd?: unknown };
   isError?: boolean;
 }
 interface Context {
@@ -252,27 +254,38 @@ interface ExtensionApi {
 }
 
 export default function hyperresearch(pi: ExtensionApi): void {
-  // Factories are bound once per session, so this flag is per session.
-  let driving = false;
+  // Track the run and vault this session drives, including bash cwd overrides.
+  let activeCwd: string | undefined;
+  let activeTag: string | undefined;
 
   pi.on("session_start", () => {
-    driving = false;
+    activeCwd = undefined;
+    activeTag = undefined;
   });
   pi.on("session_switch", () => {
-    driving = false;
+    activeCwd = undefined;
+    activeTag = undefined;
   });
   pi.on("tool_result", (event, ctx) => {
     const e = event as ToolResultEvent;
     if (e.toolName !== "bash" || e.isError || ctx.agent?.kind === "sub") return;
-    if (RUN_COMMAND.test(String(e.input?.command ?? ""))) driving = true;
+    const command = String(e.input?.command ?? "");
+    RUN_COMMAND.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = RUN_COMMAND.exec(command)) !== null) {
+      activeTag = match[1] ?? match[2] ?? match[3];
+      activeCwd = typeof e.input?.cwd === "string"
+        ? resolve(ctx.cwd ?? ".", e.input.cwd)
+        : ctx.cwd;
+    }
   });
   pi.on("session_stop", async (_event, ctx) => {
-    if (!driving || !ctx.cwd) return;
+    if (!activeCwd || !activeTag) return;
     try {
       const result = await pi.exec(
         HPR,
-        ["run", "stop-gate", "--cwd", ctx.cwd, "--platform", "omp"],
-        { cwd: ctx.cwd },
+        ["run", "stop-gate", "--cwd", activeCwd, "--platform", "omp", "--vault-tag", activeTag],
+        { cwd: activeCwd },
       );
       const lines = String(result?.stdout ?? "").trim().split("\\n");
       const last = lines[lines.length - 1];

@@ -68,8 +68,12 @@ MD_PATTERNS = [
 ]
 
 
-def render_markdown(body: str) -> str:
+def render_markdown(body: str, *, inert: bool = False) -> str:
     """Convert markdown body to HTML, resolving [[wiki-links]]."""
+    if inert:
+        from hyperresearch.core.x_projection import terminal_text
+
+        return f"<pre>{html.escape(terminal_text(body))}</pre>"
     # Escape HTML first
     text = html.escape(body)
 

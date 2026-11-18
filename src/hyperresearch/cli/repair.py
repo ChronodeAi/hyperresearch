@@ -40,7 +40,7 @@ def repair(
     result = execute_sync(vault, plan)
     report["sync"] = {
         "added": result.added, "updated": result.updated,
-        "deleted": result.deleted, "errors": len(result.errors),
+        "deleted": result.deleted, "errors": len(result.errors), "error_details": result.errors,
     }
     if not json_output:
         console.print(

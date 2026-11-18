@@ -30,6 +30,13 @@ class SearchFilters:
     min_citations: int | None = None
     retraction: str | None = None
     oa_version: str | None = None
+    fetch_provider: str | None = None
+    fetch_route: str | None = None
+    x_capture: str | None = None
+    x_receipt: str | None = None
+    x_annotation: str | None = None
+    x_observation: str | None = None
+    x_analytics: str | None = None
 
     def __post_init__(self) -> None:
         if self.retraction not in (None, "retracted", "not-retracted", "unchecked"):
@@ -106,6 +113,26 @@ class SearchFilters:
         elif self.retraction is not None:
             clauses.append(f"{table_alias}.is_retracted = ?")
             params.append(int(self.retraction == "retracted"))
+
+        for column, value in (("fetch_provider", self.fetch_provider), ("fetch_route", self.fetch_route)):
+            if value is not None:
+                clauses.append(f"{table_alias}.{column} = ?")
+                params.append(value)
+        for field, identifier, value in (
+            ("capture_refs", "capture_id", self.x_capture),
+            ("receipt_refs", "receipt_id", self.x_receipt),
+            ("annotation_refs", "annotation_id", self.x_annotation),
+            ("observation_refs", "observation_id", self.x_observation),
+            ("analytics_refs", "logical_id", self.x_analytics),
+        ):
+            if value is not None:
+                clauses.append(
+                    f"EXISTS (SELECT 1 FROM json_each({table_alias}.x_evidence,'$.{field}') r "
+                    f"JOIN x_records x ON x.path=json_extract(r.value,'$.path') "
+                    f"AND x.sha256=json_extract(r.value,'$.sha256') "
+                    f"WHERE x.path=? OR x.sha256=? OR json_extract(x.payload,'$.{identifier}')=?)"
+                )
+                params.extend([value, value, value])
 
         # Graph-aware filters
         if self.linked_from:

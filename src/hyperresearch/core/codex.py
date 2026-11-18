@@ -356,23 +356,40 @@ _ACTIVE_STATUSES = ("running",)
 STOP_GATE_ENV = "HYPERRESEARCH_STOP_GATE"
 
 
-def stop_gate_decision(
-    vault, now: datetime | None = None, platform: str | None = None
-) -> dict | None:
-    """The Stop hook's block decision for the newest run in `vault`, or None.
+def _stop_gate_manifest(vault, vault_tag: str | None) -> dict | None:
+    """Select the bound manifest exclusively, or the legacy newest run."""
+    from hyperresearch.core.runs import RunError, list_runs, load_manifest
+    from hyperresearch.core.vault import VaultError
 
-    Blocks only when the newest run is active, touched within
+    if vault_tag is None:
+        runs = list_runs(vault)
+        return runs[0] if runs else None
+    try:
+        manifest = load_manifest(vault, vault_tag)
+    except (RunError, VaultError, OSError, UnicodeError):
+        return None
+    if not isinstance(manifest, dict) or manifest.get("vault_tag") != vault_tag:
+        return None
+    return manifest
+
+
+def stop_gate_decision(
+    vault, now: datetime | None = None, platform: str | None = None,
+    *, vault_tag: str | None = None,
+) -> dict | None:
+    """Return a block decision for the bound run, or the newest if unbound.
+
+    Blocks only when the selected run is active, touched within
     STOP_GATE_WINDOW, and still has a next step. `platform` picks whose step
-    file the reason names (default Codex; OMP's stop-gate extension passes "omp").
+    file the reason names (default Codex). Explicit tags never fall back.
     """
     from hyperresearch.core.hooks import step_skill_slug
     from hyperresearch.core.platforms import CODEX, paths_for
-    from hyperresearch.core.runs import list_runs, run_resume_position
+    from hyperresearch.core.runs import run_resume_position
 
-    runs = list_runs(vault)
-    if not runs:
+    manifest = _stop_gate_manifest(vault, vault_tag)
+    if manifest is None:
         return None
-    manifest = runs[0]
     if manifest.get("status") not in _ACTIVE_STATUSES:
         return None
     try:
@@ -385,7 +402,12 @@ def stop_gate_decision(
     if now - updated > STOP_GATE_WINDOW:
         return None
 
-    next_step = run_resume_position(vault, manifest)["next_step"]
+    try:
+        next_step = run_resume_position(vault, manifest)["next_step"]
+    except (KeyError, TypeError, ValueError, AttributeError):
+        if vault_tag is not None:
+            return None
+        raise
     if next_step is None:
         return None
     skill = step_skill_slug(next_step) or f"step {next_step}"
